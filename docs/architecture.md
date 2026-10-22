@@ -80,7 +80,9 @@ Each reader's spend (Firecrawl credits) is added up per month
 it is not read from pages.
 
 The export refresh time is kept in Redis, so restarting the service does not download the export
-again while it is fresh (repeat downloads get HTTP 429).
+again while it is fresh (repeat downloads get HTTP 429). A failed download is recorded too: jobs
+and queries do not try again until `REFRESH_MINUTES` (at least 15) have passed, because retrying a
+rate-limited export keeps it blocked. `POST /api/v1/refresh` still forces a download.
 
 ## Concurrency
 

@@ -16,6 +16,8 @@ from .sources.page_fetchers import FirecrawlFetcher, PageFetcher
 log = logging.getLogger(__name__)
 
 FEED_KEY = "faireconomy"
+# Time of the last failed feed download (e.g. HTTP 429).
+FEED_FAILED_KEY = "faireconomy:failed"
 # The background jobs run this often (in process, or via POST /api/v1/jobs/tick).
 TICK_INTERVAL = timedelta(minutes=2)
 # After a release, its day page is re-read every tick until Actual appears,
@@ -94,6 +96,7 @@ class CalendarService:
                 items = await fetch_feed(self.client, self.settings.feed_url)
             except SourceError as error:
                 self.last_error = f"{now.isoformat()} feed: {error}"
+                self.store.mark_crawled(FEED_FAILED_KEY, now)
                 raise
             events = parse_feed(items, now)
             if events:
@@ -140,10 +143,16 @@ class CalendarService:
             log.info("%s: read %d page(s)", reason, len(days))
         return len(days)
 
-    def _feed_is_fresh(self) -> bool:
-        crawled = self.store.crawled_at(FEED_KEY)
+    def _feed_due(self) -> bool:
+        """Whether automatic refreshes may download the feed: the last
+        success and the last failure are both older than the refresh interval.
+        Retrying a rate-limited feed sooner keeps it blocked (HTTP 429)."""
         interval = timedelta(minutes=max(self.settings.refresh_minutes, 15))
-        return crawled is not None and self.now() - crawled < interval
+        now = self.now()
+        return all(
+            at is None or now - at >= interval
+            for at in self.store.crawled_many([FEED_KEY, FEED_FAILED_KEY])
+        )
 
     def _page_today(self) -> date:
         return self.now().astimezone(self._page_tz).date()
@@ -194,7 +203,7 @@ class CalendarService:
         already done (state lives in Redis)."""
         async with self._tick_lock:
             report: dict = {}
-            if not self._feed_is_fresh():
+            if self._feed_due():
                 try:
                     report["feed_events"] = await self.refresh_feed()
                 except SourceError as error:
@@ -231,7 +240,7 @@ class CalendarService:
         start_utc, end_utc = day_bounds(start, end, tz)
         # The feed is free; refreshing it here keeps a service without jobs
         # (REFRESH_MINUTES=0 and no cron) usable for the current week.
-        if not self._feed_is_fresh():
+        if self._feed_due():
             try:
                 await self.refresh_feed()
             except SourceError:
