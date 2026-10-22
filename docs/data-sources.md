@@ -1,0 +1,81 @@
+# Data Sources
+
+Checked 2026-10-19 from this machine.
+
+| Source | URL | Result |
+|---|---|---|
+| forexfactory.com direct | `https://www.forexfactory.com/calendar?day=oct16.2026` | 403, Cloudflare "Just a moment…" page. Not used (ADR-001). |
+| Weekly export, JSON | `https://nfs.faireconomy.media/ff_calendar_thisweek.json` | 200, ~86 events |
+| Weekly export, XML | `https://nfs.faireconomy.media/ff_calendar_thisweek.xml` | 200, adds event URL, local times only. Not used. |
+| Other export weeks | `ff_calendar_nextweek.json`, `ff_calendar_lastweek.json`, `ff_calendar_today.json` | 404 |
+| Jina Reader (removed 2026-10-19) | `https://r.jina.ai/https://www.forexfactory.com/calendar?day=…` | 401 anonymous; 200 with a key (~9k tokens per page). No longer configured |
+| Firecrawl `/v1/scrape` | `rawHtml`, `maxAge: 0`, wait 3 s | 200; **1 credit per page** (free: 1,000 / month); rows are blank without the wait, an older copy without `maxAge: 0` |
+
+## 1. Weekly export (`app/sources/faireconomy.py`)
+
+Current week, Sunday to Saturday US Eastern. Responses are not cacheable (`no-store`). Clients
+that download it too often get an HTML "Request Denied" page instead of JSON; the service treats
+that as a `SourceError` and keeps serving stored data.
+
+Item:
+
+```json
+{"title": "CPI m/m", "country": "CAD", "date": "2026-10-19T08:30:00-04:00",
+ "impact": "High", "forecast": "0.2%", "previous": "-0.1%"}
+```
+
+| Field | Mapping |
+|---|---|
+| `title` | `title` |
+| `country` | `currency`, upper-cased; `All` becomes `ALL` |
+| `date` | `time_utc` (ISO with offset, converted to UTC) |
+| `impact` | `High`, `Medium`, `Low`, `Holiday` |
+| `forecast`, `previous` | as text; empty string becomes `null` |
+| — | `actual`, `actual_status`, `url` are always `null` |
+
+Notes:
+- No all-day marker; holidays carry a clock time (often 00:00 or 21:00 ET).
+- Items are sometimes repeated verbatim; duplicates collapse to one id.
+
+## 2. Day pages via a reader service (`app/sources/page_fetchers.py`, parsed in `forexfactory_page.py`)
+
+Readers are tried in `PAGE_FETCHERS` order (default `firecrawl`, the only reader); one without a key is
+skipped, and any failure (e.g. out of credits) falls back to the next. A page with blank
+`calendar__cell--blank` cells was returned before its script ran and counts as a failure.
+
+Firecrawl request:
+
+```
+POST https://api.firecrawl.dev/v1/scrape
+Authorization: Bearer <FIRECRAWL_API_KEY>
+{"url": "https://www.forexfactory.com/calendar?day=oct14.2026", "formats": ["rawHtml"],
+ "onlyMainContent": false, "maxAge": 0, "actions": [{"type": "wait", "milliseconds": 3000}]}
+```
+
+Firecrawl renders pages in UTC−5.
+
+The day parameter is `<mon><day>.<year>` with a lower-case English month and no zero padding.
+A response without `calendar__row` is treated as blocked or changed layout (`SourceError`).
+
+Parsed markup (from github.com/xclunderrated/ForexFactory-Unofficial-API):
+
+| Selector | Field |
+|---|---|
+| `tr.calendar__row` | one event; rows without currency or title are skipped |
+| `tr[data-event-id]` | used in `url` as `#detail=<id>` |
+| `.calendar__time` | `8:30am`, `All Day`, `Tentative`; **blank means same time as the row above** |
+| `.calendar__currency` | `currency` |
+| `.calendar__impact` and descendants, `title` and `class` | impact: `high`/`red` → High, `medium`/`ora` → Medium, `holiday`/`non`/`gra` → Holiday, else Low |
+| `.calendar__event-title`, fallback `.calendar__event` | `title` |
+| `.calendar__actual` text; `better` / `worse` in its or a child's class | `actual`, `actual_status` |
+| `.calendar__forecast`, `.calendar__previous` | `forecast`, `previous` |
+
+Times are in the zone Forex Factory picks for the visitor, which follows the reader's servers, not US
+Eastern: on 2026-10-19 Firecrawl pages came back in UTC−5 and Jina pages (no longer used) in
+**UTC−2:30** (header "5:21pm" at 19:51 UTC; CAD CPI at "10:00" = 12:30 UTC = 08:30 New York). The parser therefore reads the header clock
+(`.calendar__header-time`), subtracts the UTC fetch time and rounds to 15 minutes;
+`FF_PAGE_TIMEZONE` is only the fallback when the clock is missing. `All Day` and `Tentative` rows are stored at local midnight with
+`all_day = true` and the label in `time_note`.
+
+Each page takes about 2–9 s; at most 3 run at once. A request for a week reads 9 pages (the week plus
+one day on each side, because the page zone is only known after a fetch).
