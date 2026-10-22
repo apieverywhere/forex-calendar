@@ -28,9 +28,13 @@ async def test_a_rate_limited_feed_is_not_retried_before_the_refresh_interval():
     )
     day = date(2026, 10, 23)
 
-    # Every app request and every 2-minute tick used to retry the feed,
-    # which kept the server's IP blocked.
+    # With the in-process scheduler, requests never download the feed.
     await service.events(day, day, HANOI)
+    assert feed_calls == []
+
+    # Every 2-minute tick used to retry the feed after a 429, which kept the
+    # server's IP blocked.
+    await service.tick()
     for minutes in (2, 10, 29):
         clock[0] = START + timedelta(minutes=minutes)
         await service.tick()

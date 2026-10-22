@@ -30,7 +30,10 @@ def make_service(firecrawl_key: str | None = "fc-test"):
     pages: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        pages.append(json.loads(request.content)["url"])
+        url = json.loads(request.content)["url"]
+        # Day pages only; the next-week job is covered in test_next_week.py.
+        if "?day=" in url:
+            pages.append(url)
         html = '<table><tr class="calendar__row"><td></td></tr></table>'
         return httpx.Response(200, json={"success": True, "data": {"rawHtml": html}})
 

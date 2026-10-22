@@ -9,6 +9,7 @@ Checked 2026-10-19 from this machine.
 | Weekly export, XML | `https://nfs.faireconomy.media/ff_calendar_thisweek.xml` | 200, adds event URL, local times only. Not used. |
 | Other export weeks | `ff_calendar_nextweek.json`, `ff_calendar_lastweek.json`, `ff_calendar_today.json` | 404 |
 | Jina Reader (removed 2026-10-19) | `https://r.jina.ai/https://www.forexfactory.com/calendar?day=…` | 401 anonymous; 200 with a key (~9k tokens per page). No longer configured |
+| forexfactory.com next week via Firecrawl (2026-10-22) | `https://www.forexfactory.com/calendar?week=next` | 200; 96 events Sun Oct 25 – Sat Oct 31 with Forecast / Previous; 1 credit |
 | Firecrawl `/v1/scrape` | `rawHtml`, `maxAge: 0`, wait 3 s | 200; **1 credit per page** (free: 1,000 / month); rows are blank without the wait, an older copy without `maxAge: 0` |
 
 ## 1. Weekly export (`app/sources/faireconomy.py`)
@@ -79,3 +80,19 @@ Eastern: on 2026-10-19 Firecrawl pages came back in UTC−5 and Jina pages (no l
 
 Each page takes about 2–9 s; at most 3 run at once. A request for a week reads 9 pages (the week plus
 one day on each side, because the page zone is only known after a fetch).
+
+## 3. Next-week page (`?week=next`, parsed by `parse_week`)
+
+Same reader, same row markup and time-zone rule as day pages. The page lists several days; each
+starts with a day-breaker row whose text has no year:
+
+```html
+<tr class="calendar__row calendar__row--day-breaker"><td colspan="10">Sun <span>Oct 25</span></td></tr>
+```
+
+Rows take their day from the breaker above them; the year is the one that puts the date nearest
+the fetch (a week can span New Year). A blank time cell repeats the time above within the same
+day. Event links use the day-page URL (`?day=oct26.2026#detail=<id>`). Rows are stored with
+`source = forexfactory_week`. Checked 2026-10-22: 96 events, page in UTC−5, Fed and ECB times
+matched their official schedules.
+

@@ -28,7 +28,7 @@ CORS allows any origin for `GET` and `POST`. No authentication.
 | `forecast`, `previous` | string \| null | free text as published (`0.3%`, `-775M`) |
 | `actual_status` | `better` \| `worse` \| null | Forex Factory's own coloring; day pages only |
 | `url` | string \| null | day page with `#detail=<id>`; day pages only |
-| `source` | `faireconomy` \| `forexfactory` | `forexfactory` once a day page has updated the row |
+| `source` | `faireconomy` \| `forexfactory` \| `forexfactory_week` | `forexfactory` once a day page has updated the row; `forexfactory_week` for next week read from the week page, until the export or a day page updates it |
 | `updated_at` | datetime | last time a source changed the row |
 
 ## GET /api/v1/calendar

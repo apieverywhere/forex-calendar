@@ -98,7 +98,7 @@ def test_feed_refresh_keeps_page_data_and_only_removes_its_own_rows(store):
 
     # The feed lists CPI again without Actual, and no longer lists the other.
     feed_cpi = make_event("CPI m/m", NOW + timedelta(hours=1), forecast="0.3%")
-    store.replace_window(*window, [feed_cpi], only_source="faireconomy")
+    store.replace_window(*window, [feed_cpi], only_sources={"faireconomy"})
 
     (cpi,) = store.query(*window)
     assert (cpi.actual, cpi.actual_status, cpi.forecast) == ("0.2%", "better", "0.3%")
@@ -120,11 +120,11 @@ def test_unchanged_rows_are_not_rewritten(store, clock):
     clock[0] = NOW + timedelta(minutes=30)
     later = clock[0]
     same = make_event("CPI m/m", at, forecast="0.3%").model_copy(update={"updated_at": later})
-    store.replace_window(*window, [same], only_source="faireconomy")
+    store.replace_window(*window, [same], only_sources={"faireconomy"})
     (cpi,) = store.query(*window)
     assert cpi.updated_at == NOW
 
     revised = same.model_copy(update={"forecast": "0.4%"})
-    store.replace_window(*window, [revised], only_source="faireconomy")
+    store.replace_window(*window, [revised], only_sources={"faireconomy"})
     (cpi,) = store.query(*window)
     assert (cpi.forecast, cpi.updated_at) == ("0.4%", later)

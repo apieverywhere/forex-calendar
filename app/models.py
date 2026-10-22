@@ -6,7 +6,8 @@ from pydantic import BaseModel
 
 Impact = Literal["High", "Medium", "Low", "Holiday"]
 ActualStatus = Literal["better", "worse"]
-Source = Literal["faireconomy", "forexfactory"]
+# forexfactory: a day page; forexfactory_week: the next-week page (schedule only).
+Source = Literal["faireconomy", "forexfactory", "forexfactory_week"]
 
 
 class Event(BaseModel):

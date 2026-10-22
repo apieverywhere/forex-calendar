@@ -74,15 +74,19 @@ nothing.
 | Releases awaiting Actual | day page of every data release (has Forecast or Previous) within 60 min after its time and still without Actual | ~1–2 per release time |
 | Finalize yesterday | once a day (`final:<date>` mark): yesterday's page, only if a release there still has no Actual | usually 0 |
 | Backfill | once per day ever (`page:<date>` mark): each day from Monday `PAGE_HISTORY_WEEKS` weeks ago to yesterday never read | only after a first deploy or downtime |
+| Next week | once a day in the page zone (`next-week:<date>` mark, set before the read so a failure waits a day): the `?week=next` page | 1 page (1 credit) a day |
 
 Each reader's spend (Firecrawl credits) is added up per month
-(`usage:<reader>:<YYYY-MM>`) and shown by `GET /api/v1/status` (`usage_this_month`). Next week appears only when the export rolls over (around the weekend);
-it is not read from pages.
+(`usage:<reader>:<YYYY-MM>`) and shown by `GET /api/v1/status` (`usage_this_month`). Next week comes from the `?week=next` page (one credit a day, about 30 a month).
+Its rows have `source = forexfactory_week`; they are a schedule, so when the export rolls over to
+that week its refresh may update or delete them like its own rows, and day pages override them.
 
 The export refresh time is kept in Redis, so restarting the service does not download the export
 again while it is fresh (repeat downloads get HTTP 429). A failed download is recorded too: jobs
 and queries do not try again until `REFRESH_MINUTES` (at least 15) have passed, because retrying a
 rate-limited export keeps it blocked. `POST /api/v1/refresh` still forces a download.
+Queries download the export only when `REFRESH_MINUTES=0` (no in-process jobs); otherwise
+the jobs keep it fresh and a request never waits on the export.
 
 ## Concurrency
 

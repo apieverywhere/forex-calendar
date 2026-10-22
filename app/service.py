@@ -10,7 +10,7 @@ from .config import Settings
 from .models import Event, EventOut
 from .sources import SourceError
 from .sources.faireconomy import fetch_feed, parse_feed
-from .sources.forexfactory_page import page_url, parse_day
+from .sources.forexfactory_page import NEXT_WEEK_URL, page_url, parse_day, parse_week
 from .sources.page_fetchers import FirecrawlFetcher, PageFetcher
 
 log = logging.getLogger(__name__)
@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 FEED_KEY = "faireconomy"
 # Time of the last failed feed download (e.g. HTTP 429).
 FEED_FAILED_KEY = "faireconomy:failed"
+# Time of the last successful read of the next-week page.
+NEXT_WEEK_KEY = "next-week"
 # The background jobs run this often (in process, or via POST /api/v1/jobs/tick).
 TICK_INTERVAL = timedelta(minutes=2)
 # After a release, its day page is re-read every tick until Actual appears,
@@ -102,36 +104,63 @@ class CalendarService:
             if events:
                 start = min(e.time_utc for e in events)
                 end = max(e.time_utc for e in events) + timedelta(seconds=1)
-                self.store.replace_window(start, end, events, only_source="faireconomy")
+                # The export replaces its own rows and the next-week schedule.
+                self.store.replace_window(
+                    start, end, events, only_sources={"faireconomy", "forexfactory_week"}
+                )
             self.store.mark_crawled(FEED_KEY, now)
             log.info("feed refreshed: %d events", len(events))
             return len(events)
 
-    async def crawl_day(self, day: date) -> int:
-        """Reads one forexfactory.com day page (page time zone) and stores it."""
+    async def _fetch_page(self, url: str, label: str, now: datetime) -> str:
+        """HTML of a forexfactory.com page through the first reader that
+        succeeds; its cost is added to that reader's usage."""
         if not self.fetchers:
             raise SourceError("no page reader configured (FIRECRAWL_API_KEY)")
+        errors = []
+        for fetcher in self.fetchers:
+            try:
+                page = await fetcher.fetch(self.client, url)
+                break
+            except SourceError as error:
+                # e.g. out of credits: fall back to the next reader.
+                errors.append(str(error))
+                log.warning("page %s: %s failed, trying next reader", label, fetcher.name)
+        else:
+            self.last_error = f"{now.isoformat()} page {label}: {'; '.join(errors)}"
+            raise SourceError("; ".join(errors))
+        self.store.add_usage(fetcher.name, now, page.cost)
+        return page.html
+
+    async def crawl_day(self, day: date) -> int:
+        """Reads one forexfactory.com day page (page time zone) and stores it."""
         async with self._page_semaphore:
             now = self.now()
-            errors = []
-            for fetcher in self.fetchers:
-                try:
-                    page = await fetcher.fetch(self.client, page_url(day))
-                    break
-                except SourceError as error:
-                    # e.g. out of credits: fall back to the next reader.
-                    errors.append(str(error))
-                    log.warning("page %s: %s failed, trying next reader", day, fetcher.name)
-            else:
-                self.last_error = f"{now.isoformat()} page {day}: {'; '.join(errors)}"
-                raise SourceError("; ".join(errors))
-            self.store.add_usage(fetcher.name, now, page.cost)
-            events, page_tz = parse_day(page.html, day, self._page_tz, now)
+            html = await self._fetch_page(page_url(day), str(day), now)
+            events, page_tz = parse_day(html, day, self._page_tz, now)
             self._page_tz = page_tz
             start, end = day_bounds(day, day, page_tz)
             # The page is authoritative for its day.
             self.store.replace_window(start, end, events)
             self.store.mark_crawled(f"page:{day.isoformat()}", now)
+            return len(events)
+
+    async def crawl_next_week(self) -> int:
+        """Reads the next-week page (one reader credit) and stores its
+        schedule; the export and day pages replace these rows later."""
+        async with self._page_semaphore:
+            now = self.now()
+            html = await self._fetch_page(NEXT_WEEK_URL, "next week", now)
+            events, page_tz, days = parse_week(html, self._page_tz, now)
+            if not days:
+                self.last_error = f"{now.isoformat()} page next week: no days on the page"
+                raise SourceError("next-week page lists no days")
+            self._page_tz = page_tz
+            start, end = day_bounds(min(days), max(days), page_tz)
+            # The page is authoritative for the days it lists.
+            self.store.replace_window(start, end, events)
+            self.store.mark_crawled(NEXT_WEEK_KEY, now)
+            log.info("next week: %d events", len(events))
             return len(events)
 
     async def _crawl_days(self, days: list[date], reason: str) -> int:
@@ -189,6 +218,20 @@ class CalendarService:
         self.store.mark_crawled(key, self.now())
         return read
 
+    async def refresh_next_week(self) -> int:
+        """Once a day (page zone): reads the next-week page, so the app shows
+        next week before the export rolls over. A failure waits for the next
+        day rather than spending a credit every tick."""
+        key = f"next-week:{self._page_today().isoformat()}"
+        if self.store.crawled_at(key) is not None:
+            return 0
+        self.store.mark_crawled(key, self.now())
+        try:
+            return await self.crawl_next_week()
+        except SourceError as error:
+            log.warning("next week: %s", error)
+            return 0
+
     async def backfill(self) -> int:
         """Reads, once, every day of the viewable history up to yesterday that
         was never read (e.g. right after the first deploy)."""
@@ -212,6 +255,7 @@ class CalendarService:
                 report["released_pages"] = await self.refresh_released()
                 report["finalized_pages"] = await self.finalize_yesterday()
                 report["backfilled_pages"] = await self.backfill()
+                report["next_week_events"] = await self.refresh_next_week()
             return report
 
     async def run_jobs_loop(self) -> None:
@@ -239,8 +283,10 @@ class CalendarService:
         """Stored events only; never reads a day page (no reader credits)."""
         start_utc, end_utc = day_bounds(start, end, tz)
         # The feed is free; refreshing it here keeps a service without jobs
-        # (REFRESH_MINUTES=0 and no cron) usable for the current week.
-        if self._feed_due():
+        # (REFRESH_MINUTES=0 and no cron) usable for the current week. With the
+        # in-process scheduler the jobs refresh it, so requests never wait on
+        # a feed download (up to the 20 s client timeout).
+        if self.settings.refresh_minutes == 0 and self._feed_due():
             try:
                 await self.refresh_feed()
             except SourceError:

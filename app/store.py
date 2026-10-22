@@ -14,7 +14,7 @@ write and skipped on read.
 """
 
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from datetime import UTC, datetime, timedelta
 
 import redis
@@ -99,12 +99,12 @@ class EventStore:
         end: datetime,
         events: Iterable[Event],
         *,
-        only_source: str | None = None,
+        only_sources: Collection[str] | None = None,
     ) -> int:
         """Upserts [events] and deletes events in [start, end) they no longer list.
 
-        With [only_source], only that source's events without an Actual are
-        deleted, so a partial source cannot erase richer data. Events already
+        With [only_sources], only events from those sources without an Actual
+        are deleted, so a partial source cannot erase richer data. Events already
         past retention are not stored.
         """
         new = {e.id: e for e in events}
@@ -117,10 +117,10 @@ class EventStore:
                 for event_id in in_window
                 if event_id not in new
                 and (
-                    only_source is None
+                    only_sources is None
                     or event_id not in existing
                     or (
-                        existing[event_id].source == only_source
+                        existing[event_id].source in only_sources
                         and existing[event_id].actual is None
                     )
                 )
