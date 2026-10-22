@@ -64,7 +64,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 - Use a Redis with persistence (AOF or RDB snapshots), e.g. a managed Redis; otherwise past
-  weeks are lost when Redis restarts.
+  weeks are lost when Redis restarts. Upstash works over its Redis protocol, no extra library:
+  `REDIS_URL=rediss://default:<token>@<name>.upstash.io:6379` (`rediss` = TLS; the password is
+  the database token).
 - Put it behind HTTPS (reverse proxy or the platform's TLS) before the Whalio app uses it on
   devices; iOS blocks plain HTTP by default.
 - Keep `FIRECRAWL_API_KEY` in the platform's secret store, not in the image.

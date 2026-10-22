@@ -6,7 +6,8 @@ import pytest
 from app.models import Event, event_id
 from app.store import EventStore
 
-NOW = datetime(2026, 10, 19, 12, tzinfo=UTC)
+# Real time: fakeredis expires keys against the real clock.
+NOW = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
 
 
 def make_event(title: str, at: datetime, **fields) -> Event:
@@ -109,3 +110,21 @@ def test_crawl_marks_expire_with_retention(store, client):
 
     assert store.crawled_at("faireconomy") == NOW
     assert 0 < client.ttl("fxcal:crawl:faireconomy") <= 60 * 24 * 3600
+
+
+def test_unchanged_rows_are_not_rewritten(store, clock):
+    window = (NOW, NOW + timedelta(days=1))
+    at = NOW + timedelta(hours=1)
+    store.replace_window(*window, [make_event("CPI m/m", at, forecast="0.3%")])
+
+    clock[0] = NOW + timedelta(minutes=30)
+    later = clock[0]
+    same = make_event("CPI m/m", at, forecast="0.3%").model_copy(update={"updated_at": later})
+    store.replace_window(*window, [same], only_source="faireconomy")
+    (cpi,) = store.query(*window)
+    assert cpi.updated_at == NOW
+
+    revised = same.model_copy(update={"forecast": "0.4%"})
+    store.replace_window(*window, [revised], only_source="faireconomy")
+    (cpi,) = store.query(*window)
+    assert (cpi.forecast, cpi.updated_at) == ("0.4%", later)

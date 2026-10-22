@@ -184,12 +184,9 @@ class CalendarService:
         """Reads, once, every day of the viewable history up to yesterday that
         was never read (e.g. right after the first deploy)."""
         first, yesterday = self.earliest_page_day(), self._page_today() - timedelta(days=1)
-        days = [
-            day
-            for i in range((yesterday - first).days + 1)
-            if self.store.crawled_at(f"page:{(day := first + timedelta(days=i)).isoformat()}")
-            is None
-        ]
+        history = [first + timedelta(days=i) for i in range((yesterday - first).days + 1)]
+        marks = self.store.crawled_many([f"page:{day.isoformat()}" for day in history])
+        days = [day for day, mark in zip(history, marks) if mark is None]
         return await self._crawl_days(days, "backfill")
 
     async def tick(self) -> dict:

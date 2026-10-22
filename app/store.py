@@ -130,19 +130,30 @@ class EventStore:
             for event_id in stale:
                 pipe.delete(self._event_key(event_id))
                 pipe.zrem(self._index, event_id)
+            indexed = set(in_window)
             stored = 0
             for event_id, event in new.items():
                 if event.time_utc < cutoff:
                     continue
-                merged = merge(existing.get(event_id), event)
+                old = existing.get(event_id)
+                merged = merge(old, event)
+                stored += 1
+                # Unchanged rows are not rewritten (hosted Redis bills per command);
+                # their key and expiry are already in place.
+                if (
+                    old is not None
+                    and event_id in indexed
+                    and merged.model_copy(update={"updated_at": old.updated_at}) == old
+                ):
+                    continue
                 pipe.set(
                     self._event_key(event_id),
                     merged.model_dump_json(),
                     exat=int(_score(event.time_utc + self._retention)),
                 )
                 pipe.zadd(self._index, {event_id: _score(event.time_utc)})
-                stored += 1
-            pipe.execute()
+            if len(pipe):
+                pipe.execute()
         return stored
 
     def query(self, start: datetime, end: datetime) -> list[Event]:
@@ -165,6 +176,13 @@ class EventStore:
     def crawled_at(self, key: str) -> datetime | None:
         value = self._redis.get(f"{self._prefix}crawl:{key}")
         return datetime.fromisoformat(value) if value else None
+
+    def crawled_many(self, keys: list[str]) -> list[datetime | None]:
+        """[crawled_at] for several keys in one command."""
+        if not keys:
+            return []
+        values = self._redis.mget([f"{self._prefix}crawl:{key}" for key in keys])
+        return [datetime.fromisoformat(v) if v else None for v in values]
 
     def add_usage(self, reader: str, at: datetime, amount: int) -> None:
         key = f"{self._prefix}usage:{reader}:{at.astimezone(UTC):%Y-%m}"

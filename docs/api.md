@@ -29,7 +29,7 @@ CORS allows any origin for `GET` and `POST`. No authentication.
 | `actual_status` | `better` \| `worse` \| null | Forex Factory's own coloring; day pages only |
 | `url` | string \| null | day page with `#detail=<id>`; day pages only |
 | `source` | `faireconomy` \| `forexfactory` | `forexfactory` once a day page has updated the row |
-| `updated_at` | datetime | last time a source wrote the row |
+| `updated_at` | datetime | last time a source changed the row |
 
 ## GET /api/v1/calendar
 

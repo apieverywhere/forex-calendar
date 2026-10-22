@@ -40,7 +40,8 @@ Redis, prefix `fxcal:`:
 | `crawl:<key>` | string | last crawl, `faireconomy` or `page:YYYY-MM-DD` | after `RETENTION_DAYS` |
 
 Range queries read ids from the sorted set, then `MGET` the events. Events already past retention
-are never written.
+are never written, and rows a refresh leaves unchanged are not rewritten (hosted Redis such as
+Upstash bills per command).
 
 ### Ids and merging (ADR-002)
 
