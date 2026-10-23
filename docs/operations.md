@@ -10,7 +10,7 @@ Environment variables (see `.env.example`); `uvicorn --env-file .env` loads them
 | `RETENTION_DAYS` | `15` | Events are deleted this many days after their release (the app shows at most last week) |
 | `JOBS_TOKEN` | empty | Bearer token for `POST /api/v1/jobs/tick` and `/api/v1/refresh`; empty disables both |
 | `REDIS_PREFIX` | `fxcal:` | Key prefix, to share a Redis with other apps |
-| `PAGE_HISTORY_WEEKS` | `1` | Requests crawl day pages only back to the Monday this many weeks ago; older days come from storage only |
+| `PAGE_HISTORY_WEEKS` | `1` | Backfill reads day pages only back to the Monday this many weeks ago; older days come from storage only |
 | `FEED_URL` | `https://nfs.faireconomy.media/ff_calendar_thisweek.json` | Weekly export |
 | `REFRESH_MINUTES` | `30` | Background refresh interval; `0` disables the job. Effective minimum 15 |
 | `PAGE_FETCHERS` | `firecrawl` | Day-page readers in fallback order (only `firecrawl` exists) |

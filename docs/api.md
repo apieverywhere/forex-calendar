@@ -22,13 +22,13 @@ CORS allows any origin for `GET` and `POST`. No authentication.
 | `time_utc` | datetime | UTC; local midnight for all-day events |
 | `date` | date | in `tz` |
 | `time` | string | `HH:MM` in `tz`, or `time_note` / `All Day` when `all_day` |
-| `all_day` | bool | true for `All Day` / `Tentative` rows (day pages only) |
+| `all_day` | bool | true for `All Day` / `Tentative` rows (day or week pages only) |
 | `time_note` | string \| null | `All Day`, `Tentative` |
-| `actual` | string \| null | null until released; day pages only |
+| `actual` | string \| null | null until released; day or week pages only |
 | `forecast`, `previous` | string \| null | free text as published (`0.3%`, `-775M`) |
-| `actual_status` | `better` \| `worse` \| null | Forex Factory's own coloring; day pages only |
-| `url` | string \| null | day page with `#detail=<id>`; day pages only |
-| `source` | `faireconomy` \| `forexfactory` \| `forexfactory_week` | `forexfactory` once a day page has updated the row; `forexfactory_week` for next week read from the week page, until the export or a day page updates it |
+| `actual_status` | `better` \| `worse` \| null | Forex Factory's own coloring; day or week pages only |
+| `url` | string \| null | day page with `#detail=<id>`; day or week pages only |
+| `source` | `faireconomy` \| `forexfactory` \| `forexfactory_week` | `forexfactory` once a day page has updated the row; `forexfactory_week` from a week page (next week, or this week while the export is unavailable) until the export or a day page updates it |
 | `updated_at` | datetime | last time a source changed the row |
 
 ## GET /api/v1/calendar

@@ -14,7 +14,7 @@ it, and hides the upstream details from clients.
 | In | Out |
 |---|---|
 | Collect the weekly export on a schedule | Bypassing Cloudflare or other access controls |
-| Optional day pages via Firecrawl (with an API key) | Event detail pages, history charts, news |
+| Optional day and week pages via Firecrawl (with an API key) | Event detail pages, history charts, news |
 | Store collected events in Redis for 15 days after release | User accounts, API keys for clients |
 | Query by day range and time zone; filter by currency, impact, text, released | Push notifications (Whalio ADR-002 owns those) |
 | JSON and CSV output | A web dashboard |
@@ -23,7 +23,7 @@ it, and hides the upstream details from clients.
 
 | Without `FIRECRAWL_API_KEY` | With `FIRECRAWL_API_KEY` |
 |---|---|
-| Current week from the export, plus past weeks collected while the service ran (kept 15 days) | Current and last week, Actual within minutes of release |
+| Current week from the export, plus past weeks collected while the service ran (kept 15 days); next week only after the export rolls over (around the weekend) | Last, current and next week, Actual within minutes of release; this week stays fresh while the export is rate-limited |
 | Forecast, Previous | Forecast, Previous, **Actual**, better / worse status, link to the day page |
 | About 80–100 events a week, all currencies Forex Factory lists | Same events |
 

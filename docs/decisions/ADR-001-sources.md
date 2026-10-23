@@ -22,6 +22,8 @@ export works.
 - Without a key: current week plus collected history, no Actual values.
 - With a key, next week is read from the `?week=next` page once a day (added 2026-10-23); the
   export has no next-week file (`ff_calendar_nextweek.json` is 404).
+- With a key, this week is read from the `?week=this` page while the export fails (added
+  2026-10-23, after Render's shared IP got HTTP 429): after 2 h of failure, at most every 6 h.
 - With a key: full data, at a few seconds per day page.
 - If Firecrawl stops serving Forex Factory pages, the service degrades to the export; it does not
   fail.

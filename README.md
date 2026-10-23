@@ -17,6 +17,7 @@ Full documentation is in [`docs/`](docs/):
 |---|---|---|
 | Weekly export `nfs.faireconomy.media/ff_calendar_thisweek.json` (published by Forex Factory) | Current week: time, currency, impact, forecast, previous. **No Actual.** | nothing |
 | Day pages `forexfactory.com/calendar?day=oct14.2026`, read through [Firecrawl](https://firecrawl.dev) | Any date, **Actual** and better / worse status | `FIRECRAWL_API_KEY` |
+| Week pages `forexfactory.com/calendar?week=next` / `?week=this`, read through Firecrawl | Next week before the export rolls over; this week while the export is rate-limited | `FIRECRAWL_API_KEY` |
 
 forexfactory.com blocks direct requests with a Cloudflare bot check; this service does not try to
 bypass it. Without a Firecrawl key only the weekly export is used. Every refresh is stored, so past
@@ -83,11 +84,18 @@ Days and the `date` / `time` fields are in `tz`; `time_utc` is always UTC.
 
 ## How it refreshes
 
-- The weekly export is refreshed every `REFRESH_MINUTES` (default 30) in the background, and on a
-  request when older than that. The export blocks clients that poll it too often.
-- Requests never read day pages. With a Firecrawl key, background jobs read them only right after
-  releases (until Actual appears), once a day for releases that missed that window, and once for
-  never-read days of the viewable history (last week by default). See `docs/architecture.md`.
+- The weekly export is refreshed every `REFRESH_MINUTES` (default 30) in the background (on a
+  request only when `REFRESH_MINUTES=0`). After a failure (e.g. HTTP 429) it waits the same
+  interval before retrying. The export blocks clients that poll it too often.
+- Requests never read pages. With a Firecrawl key (1 credit per page), background jobs read:
+  - day pages right after releases until Actual appears (every 2 min for 10 min, then every
+    10 min, up to 60 min), once a day for releases that missed that window, and once for
+    never-read days of the viewable history (last week by default);
+  - the next-week page once a day;
+  - the this-week page only while the export fails: after 2 h of failure, at most every 6 h.
+
+  Expected spend: about 220–560 credits a month (`docs/data-sources.md`, Credit budget). See
+  `docs/architecture.md`.
 - Rows from both sources share an id (currency + title + UTC time), so a page crawl adds Actual
   to the export's row, and a later export refresh never removes it.
 
@@ -103,6 +111,6 @@ app/
 └── sources/
     ├── faireconomy.py          weekly export
     ├── page_fetchers.py        readers for day pages (Firecrawl) with fallback
-    └── forexfactory_page.py    day-page parsing
+    └── forexfactory_page.py    day- and week-page parsing
 tests/
 ```

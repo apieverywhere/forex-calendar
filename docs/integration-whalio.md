@@ -23,6 +23,9 @@ GET {BASE}/api/v1/calendar?start=2026-10-19&end=2026-10-25&tz=Asia/Ho_Chi_Minh
 
 Day selection, impact and currency filters stay client-side, as now (no refetch).
 
+Next week is available all week with a Firecrawl key (read from the next-week page once a day);
+without one it appears only after the export rolls over, around the weekend.
+
 ## Field mapping to `EconomicEvent`
 
 | Whalio field | API field |

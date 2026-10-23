@@ -32,7 +32,8 @@ Keep `docs/` in sync when a change affects endpoints, fields, sources or refresh
   15 minutes or more.
 - Event ids are `sha1(currency|title|time_utc)[:16]` in both sources; changing that formula
   breaks merging and existing stored rows (ADR-002).
-- Queries never read day pages (readers cost credits); only the jobs in `CalendarService.tick` do.
+- Queries never read pages (readers cost credits); only the jobs in `CalendarService.tick` do.
+  Keep the monthly spend within the Firecrawl budget in `docs/data-sources.md` (1,000 credits).
 - Every event key must carry an expiry (release time + `RETENTION_DAYS`); never write an event
   without one (ADR-003).
 
@@ -54,7 +55,7 @@ app/
     ├── __init__.py             SourceError
     ├── faireconomy.py          weekly export
     ├── page_fetchers.py        readers for day pages (Firecrawl) with fallback
-    └── forexfactory_page.py    day-page parsing
+    └── forexfactory_page.py    day- and week-page parsing
 tests/                          pytest; upstream faked with httpx.MockTransport
 ```
 
