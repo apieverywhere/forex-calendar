@@ -98,7 +98,7 @@ means upstream trouble. Logs print `feed refreshed: N events` on each refresh.
 | `page has no calendar table` | Blocked page or Forex Factory changed its markup | Fetch the page through Firecrawl by hand and compare with `docs/data-sources.md` |
 | Day-page times off by hours | Header clock missing or a stale cached page | Check that Firecrawl requests send `maxAge: 0`; compare one event with the export |
 | Feed HTTP 429 after restarts | Export downloaded too often | Wait; restarts no longer re-download while the stored refresh is fresh, and after a failure the service waits `REFRESH_MINUTES` before retrying |
-| Feed HTTP 429 on a cloud host that never succeeded (`feed_refreshed_at: null`) | The host's shared outgoing IP is blocked by the export | Wait a few refresh intervals; if it persists, the IP is blocked for other tenants' traffic too: move to a host with its own IP |
+| Feed HTTP 429 on a cloud host (`feed_refreshed_at` old or null) | The host's shared outgoing IP is blocked by the export, by other tenants' traffic too (seen on Render Singapore, 2026-10-23) | With `FIRECRAWL_API_KEY` the service reads this week from the `?week=this` page after 2 h, every 6 h at most, until the export recovers. Otherwise move to a host with its own IP |
 | Firecrawl credits used up fast | Backfill after a deploy or downtime | Each page costs 1 credit; past days are re-read at most every 24 h |
 | Empty response for a past week | Service was not running that week and no Firecrawl key | Add a key, or accept the gap |
 | Startup fails with `ConnectionError` | Redis not running or wrong `REDIS_URL` | Start Redis; check `redis-cli -u $REDIS_URL ping` |

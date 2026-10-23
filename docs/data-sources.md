@@ -81,7 +81,10 @@ Eastern: on 2026-10-19 Firecrawl pages came back in UTC−5 and Jina pages (no l
 Each page takes about 2–9 s; at most 3 run at once. A request for a week reads 9 pages (the week plus
 one day on each side, because the page zone is only known after a fetch).
 
-## 3. Next-week page (`?week=next`, parsed by `parse_week`)
+## 3. Week pages (`?week=next`, `?week=this`, parsed by `parse_week`)
+
+`?week=this` is read only as a fallback while the export fails (checked 2026-10-23: 86 events,
+the same as the export, plus 56 Actuals).
 
 Same reader, same row markup and time-zone rule as day pages. The page lists several days; each
 starts with a day-breaker row whose text has no year:
@@ -95,4 +98,21 @@ the fetch (a week can span New Year). A blank time cell repeats the time above w
 day. Event links use the day-page URL (`?day=oct26.2026#detail=<id>`). Rows are stored with
 `source = forexfactory_week`. Checked 2026-10-22: 96 events, page in UTC−5, Fed and ECB times
 matched their official schedules.
+
+## Credit budget (Firecrawl, 1 credit per page)
+
+Estimated 2026-10-23 from a week with 43 release times (~186 a month); every past release that
+week got its Actual within minutes.
+
+| Job | Credits / month |
+|---|---|
+| Releases awaiting Actual (1–2 reads per release time) | 190–370 |
+| Finalize yesterday | 0–30 |
+| Backfill (first deploy, downtime) | 0–10 |
+| Next week (1 a day) | ~31 |
+| This week fallback (only while the export fails, ≤ 4 a day) | 0–120 |
+| **Total** | **~220–560** of a 1,000 free tier |
+
+A release that never gets an Actual costs about 10 reads (every tick for 10 min, then every
+10 min until 60). Spend so far: `usage_this_month` in `GET /api/v1/status`.
 

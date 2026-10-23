@@ -10,7 +10,13 @@ from .config import Settings
 from .models import Event, EventOut
 from .sources import SourceError
 from .sources.faireconomy import fetch_feed, parse_feed
-from .sources.forexfactory_page import NEXT_WEEK_URL, page_url, parse_day, parse_week
+from .sources.forexfactory_page import (
+    NEXT_WEEK_URL,
+    THIS_WEEK_URL,
+    page_url,
+    parse_day,
+    parse_week,
+)
 from .sources.page_fetchers import FirecrawlFetcher, PageFetcher
 
 log = logging.getLogger(__name__)
@@ -18,13 +24,23 @@ log = logging.getLogger(__name__)
 FEED_KEY = "faireconomy"
 # Time of the last failed feed download (e.g. HTTP 429).
 FEED_FAILED_KEY = "faireconomy:failed"
-# Time of the last successful read of the next-week page.
+# Time of the last successful read of the next-week / this-week page.
 NEXT_WEEK_KEY = "next-week"
+THIS_WEEK_KEY = "this-week"
 # The background jobs run this often (in process, or via POST /api/v1/jobs/tick).
 TICK_INTERVAL = timedelta(minutes=2)
-# After a release, its day page is re-read every tick until Actual appears,
-# for at most RELEASE_WINDOW (Forex Factory usually posts within minutes).
+# After a release, its day page is re-read until Actual appears, for at most
+# RELEASE_WINDOW: every tick for the first RELEASE_FAST_WINDOW (Forex Factory
+# usually posts within a minute), then every RELEASE_SLOW_INTERVAL. A release
+# that never gets an Actual costs about 10 reads instead of 30.
 RELEASE_WINDOW = timedelta(minutes=60)
+RELEASE_FAST_WINDOW = timedelta(minutes=10)
+RELEASE_SLOW_INTERVAL = timedelta(minutes=10)
+# While the export fails (e.g. HTTP 429 on a shared cloud IP), this week is
+# read from the ?week=this page instead: after the export has been failing for
+# THIS_WEEK_AFTER, at most once per THIS_WEEK_INTERVAL (one credit each).
+THIS_WEEK_AFTER = timedelta(hours=2)
+THIS_WEEK_INTERVAL = timedelta(hours=6)
 _PAGE_CONCURRENCY = 3
 
 
@@ -148,19 +164,27 @@ class CalendarService:
     async def crawl_next_week(self) -> int:
         """Reads the next-week page (one reader credit) and stores its
         schedule; the export and day pages replace these rows later."""
+        return await self._crawl_week(NEXT_WEEK_URL, NEXT_WEEK_KEY, "next week")
+
+    async def crawl_this_week(self) -> int:
+        """Reads the this-week page (one reader credit): the export's data,
+        plus Actuals, when the export itself is unavailable."""
+        return await self._crawl_week(THIS_WEEK_URL, THIS_WEEK_KEY, "this week")
+
+    async def _crawl_week(self, url: str, key: str, label: str) -> int:
         async with self._page_semaphore:
             now = self.now()
-            html = await self._fetch_page(NEXT_WEEK_URL, "next week", now)
+            html = await self._fetch_page(url, label, now)
             events, page_tz, days = parse_week(html, self._page_tz, now)
             if not days:
-                self.last_error = f"{now.isoformat()} page next week: no days on the page"
-                raise SourceError("next-week page lists no days")
+                self.last_error = f"{now.isoformat()} page {label}: no days on the page"
+                raise SourceError(f"{label} page lists no days")
             self._page_tz = page_tz
             start, end = day_bounds(min(days), max(days), page_tz)
             # The page is authoritative for the days it lists.
             self.store.replace_window(start, end, events)
-            self.store.mark_crawled(NEXT_WEEK_KEY, now)
-            log.info("next week: %d events", len(events))
+            self.store.mark_crawled(key, now)
+            log.info("%s: %d events", label, len(events))
             return len(events)
 
     async def _crawl_days(self, days: list[date], reason: str) -> int:
@@ -201,9 +225,25 @@ class CalendarService:
         return [e for e in self.store.query(now - RELEASE_WINDOW, now) if awaits_actual(e)]
 
     async def refresh_released(self) -> int:
-        """Re-reads the day pages of releases awaiting Actual."""
-        days = sorted({e.time_utc.astimezone(self._page_tz).date() for e in self.awaiting_actual()})
-        return await self._crawl_days(days, "releases awaiting Actual")
+        """Re-reads the day pages of releases awaiting Actual: every tick while
+        the newest pending release on that page is in its first
+        RELEASE_FAST_WINDOW, then every RELEASE_SLOW_INTERVAL."""
+        now = self.now()
+        youngest: dict[date, timedelta] = {}
+        for event in self.awaiting_actual():
+            day = event.time_utc.astimezone(self._page_tz).date()
+            age = now - event.time_utc
+            youngest[day] = min(age, youngest.get(day, age))
+        days = sorted(youngest)
+        read_at = self.store.crawled_many([f"page:{day.isoformat()}" for day in days])
+        due = [
+            day
+            for day, last in zip(days, read_at)
+            if youngest[day] <= RELEASE_FAST_WINDOW
+            or last is None
+            or now - last >= RELEASE_SLOW_INTERVAL
+        ]
+        return await self._crawl_days(due, "releases awaiting Actual")
 
     async def finalize_yesterday(self) -> int:
         """Once a day: re-reads yesterday's page if a release there still has
@@ -232,6 +272,28 @@ class CalendarService:
             log.warning("next week: %s", error)
             return 0
 
+    async def refresh_this_week(self) -> int:
+        """Reads the this-week page while the export is failing: once it has
+        failed for THIS_WEEK_AFTER since its last success, at most every
+        THIS_WEEK_INTERVAL. Never runs while the export works."""
+        now = self.now()
+        succeeded, failed, read = self.store.crawled_many(
+            [FEED_KEY, FEED_FAILED_KEY, THIS_WEEK_KEY + ":tried"]
+        )
+        failing = failed is not None and (succeeded is None or failed > succeeded)
+        if not failing:
+            return 0
+        if succeeded is not None and now - succeeded < THIS_WEEK_AFTER:
+            return 0
+        if read is not None and now - read < THIS_WEEK_INTERVAL:
+            return 0
+        self.store.mark_crawled(THIS_WEEK_KEY + ":tried", now)
+        try:
+            return await self.crawl_this_week()
+        except SourceError as error:
+            log.warning("this week: %s", error)
+            return 0
+
     async def backfill(self) -> int:
         """Reads, once, every day of the viewable history up to yesterday that
         was never read (e.g. right after the first deploy)."""
@@ -256,6 +318,7 @@ class CalendarService:
                 report["finalized_pages"] = await self.finalize_yesterday()
                 report["backfilled_pages"] = await self.backfill()
                 report["next_week_events"] = await self.refresh_next_week()
+                report["this_week_events"] = await self.refresh_this_week()
             return report
 
     async def run_jobs_loop(self) -> None:

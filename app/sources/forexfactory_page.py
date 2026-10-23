@@ -35,6 +35,7 @@ _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
 _CLOCK = re.compile(r"^(\d{1,2}):(\d{2})\s*(am|pm)$", re.IGNORECASE)
 _BREAKER_DATE = re.compile(r"\b([A-Za-z]{3})\s+(\d{1,2})\b")
 
+THIS_WEEK_URL = "https://www.forexfactory.com/calendar?week=this"
 NEXT_WEEK_URL = "https://www.forexfactory.com/calendar?week=next"
 
 

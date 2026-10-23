@@ -71,9 +71,10 @@ nothing.
 | Step | Reads | Day pages |
 |---|---|---|
 | Export refresh | the weekly export, when older than `max(REFRESH_MINUTES, 15)` min | 0 |
-| Releases awaiting Actual | day page of every data release (has Forecast or Previous) within 60 min after its time and still without Actual | ~1–2 per release time |
+| Releases awaiting Actual | day page of every data release (has Forecast or Previous) within 60 min after its time and still without Actual: every tick for the first 10 min, then every 10 min | ~1–2 per release time; at most ~10 when no Actual ever appears |
 | Finalize yesterday | once a day (`final:<date>` mark): yesterday's page, only if a release there still has no Actual | usually 0 |
 | Backfill | once per day ever (`page:<date>` mark): each day from Monday `PAGE_HISTORY_WEEKS` weeks ago to yesterday never read | only after a first deploy or downtime |
+| This week (fallback) | only while the export fails: once it has failed for 2 h since its last success, the `?week=this` page at most every 6 h (`this-week:tried` mark) | 0 while the export works; ≤ 4 a day |
 | Next week | once a day in the page zone (`next-week:<date>` mark, set before the read so a failure waits a day): the `?week=next` page | 1 page (1 credit) a day |
 
 Each reader's spend (Firecrawl credits) is added up per month
