@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import io
+import json
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, date, datetime, timedelta
@@ -15,6 +16,7 @@ from fastapi.responses import Response
 
 from .config import Settings
 from .models import CalendarResponse, EventOut
+from .push import FcmSender
 from .service import CalendarService
 from .sources import SourceError
 from .store import EventStore
@@ -50,7 +52,13 @@ def create_app(
             follow_redirects=True,
             headers={"User-Agent": settings.user_agent},
         )
-        service = CalendarService(settings, store, client)
+        # An invalid service account fails at startup, not at the first release.
+        push = (
+            FcmSender(json.loads(settings.fcm_service_account), client)
+            if settings.fcm_service_account
+            else None
+        )
+        service = CalendarService(settings, store, client, push=push)
         app.state.service = service
         # In-process scheduler. With REFRESH_MINUTES=0 an external cron calls
         # POST /api/v1/jobs/tick instead (hosts that stop idle processes).

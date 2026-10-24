@@ -18,6 +18,7 @@ background task (lifespan) ──> CalendarService.refresh_feed() every REFRESH_
 | `service.py` | `CalendarService`: refresh, crawl, freshness, filtering, status; `day_bounds`, `to_output` |
 | `store.py` | `EventStore`: Redis keys, expiry, time index, merge, range query, crawl log; writes guarded by a lock |
 | `sources/` | Upstream HTTP and parsing only; raise `SourceError` on any upstream problem |
+| `push.py` | `FcmSender`: "Actual released" notifications to FCM topics (ADR-004); message text in the Whalio app's 7 languages |
 
 ## Request flow (`GET /api/v1/calendar`)
 
@@ -76,6 +77,7 @@ nothing.
 | Backfill | once per day ever (`page:<date>` mark): each day from Monday `PAGE_HISTORY_WEEKS` weeks ago to yesterday never read | only after a first deploy or downtime |
 | This week (fallback) | only while the export fails: once it has failed for 2 h since its last success, the `?week=this` page at most every 6 h (`this-week:tried` mark) | 0 while the export works; ≤ 4 a day |
 | Next week | once a day in the page zone (`next-week:<date>` mark, set before the read so a failure waits a day): the `?week=next` page | 1 page (1 credit) a day |
+| Push Actuals | only with `FCM_SERVICE_ACCOUNT`: releases of the last 3 h that have an Actual and no `push:<id>:<lang>` mark get one FCM message per language (ADR-004) | 0 |
 
 Each reader's spend (Firecrawl credits) is added up per month
 (`usage:<reader>:<YYYY-MM>`) and shown by `GET /api/v1/status` (`usage_this_month`). Next week comes from the `?week=next` page (one credit a day, about 30 a month).

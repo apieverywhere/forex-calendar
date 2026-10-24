@@ -17,6 +17,7 @@ from .sources.forexfactory_page import (
     parse_day,
     parse_week,
 )
+from .push import LANGUAGES, FcmSender, PushError
 from .sources.page_fetchers import FirecrawlFetcher, PageFetcher
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,9 @@ RELEASE_SLOW_INTERVAL = timedelta(minutes=10)
 THIS_WEEK_AFTER = timedelta(hours=2)
 THIS_WEEK_INTERVAL = timedelta(hours=6)
 _PAGE_CONCURRENCY = 3
+# "Actual released" pushes go out only for releases this recent, so a backfill
+# or a late read of an older day sends nothing (Whalio spec 010).
+PUSH_WINDOW = timedelta(hours=3)
 
 
 def day_bounds(start: date, end: date, tz: tzinfo) -> tuple[datetime, datetime]:
@@ -86,11 +90,14 @@ class CalendarService:
         store,
         client: httpx.AsyncClient,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        push: FcmSender | None = None,
     ):
         self.settings = settings
         self.store = store
         self.client = client
         self.now = now
+        # None when FCM_SERVICE_ACCOUNT is unset: no notifications.
+        self.push = push
         self.last_error: str | None = None
         self._feed_lock = asyncio.Lock()
         self._tick_lock = asyncio.Lock()
@@ -303,6 +310,32 @@ class CalendarService:
         days = [day for day, mark in zip(history, marks) if mark is None]
         return await self._crawl_days(days, "backfill")
 
+    async def push_actuals(self) -> int:
+        """Sends "Actual released" for releases of the last PUSH_WINDOW that
+        have their Actual, once per event and language (marked in Redis, so a
+        revised Actual is not sent again). A failed send is retried next tick."""
+        if self.push is None:
+            return 0
+        now = self.now()
+        released = [e for e in self.store.query(now - PUSH_WINDOW, now) if e.actual is not None]
+        messages = [(event, lang) for event in released for lang in LANGUAGES]
+        marks = self.store.crawled_many([f"push:{e.id}:{lang}" for e, lang in messages])
+        sent = 0
+        for (event, lang), mark in zip(messages, marks):
+            if mark is not None:
+                continue
+            try:
+                await self.push.send(event, lang)
+            except PushError as error:
+                self.last_error = f"{now.isoformat()} push: {error}"
+                log.warning("push %s %s: %s", event.id, lang, error)
+                continue
+            self.store.mark_crawled(f"push:{event.id}:{lang}", now)
+            sent += 1
+        if sent:
+            log.info("pushed %d Actual notification(s)", sent)
+        return sent
+
     async def tick(self) -> dict:
         """Runs every job that is due. Safe to call often: each job skips work
         already done (state lives in Redis)."""
@@ -319,6 +352,8 @@ class CalendarService:
                 report["backfilled_pages"] = await self.backfill()
                 report["next_week_events"] = await self.refresh_next_week()
                 report["this_week_events"] = await self.refresh_this_week()
+            if self.push is not None:
+                report["pushed"] = await self.push_actuals()
             return report
 
     async def run_jobs_loop(self) -> None:
@@ -373,6 +408,7 @@ class CalendarService:
             "refresh_minutes": self.settings.refresh_minutes,
             "retention_days": self.settings.retention_days,
             "page_fetchers": [f.name for f in self.fetchers],
+            "push_enabled": self.push is not None,
             # Firecrawl credits spent this month (UTC).
             "usage_this_month": {f.name: self.store.usage(f.name, now) for f in self.fetchers},
             "last_error": self.last_error,

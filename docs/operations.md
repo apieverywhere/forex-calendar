@@ -9,6 +9,7 @@ Environment variables (see `.env.example`); `uvicorn --env-file .env` loads them
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis holding events |
 | `RETENTION_DAYS` | `15` | Events are deleted this many days after their release (the app shows at most last week) |
 | `JOBS_TOKEN` | empty | Bearer token for `POST /api/v1/jobs/tick` and `/api/v1/refresh`; empty disables both |
+| `FCM_SERVICE_ACCOUNT` | empty | Firebase service account key (the whole JSON, one line) for "Actual released" pushes to the Whalio app (ADR-004); empty disables them |
 | `REDIS_PREFIX` | `fxcal:` | Key prefix, to share a Redis with other apps |
 | `PAGE_HISTORY_WEEKS` | `1` | Backfill reads day pages only back to the Monday this many weeks ago; older days come from storage only |
 | `FEED_URL` | `https://nfs.faireconomy.media/ff_calendar_thisweek.json` | Weekly export |
@@ -69,7 +70,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
   the database token).
 - Put it behind HTTPS (reverse proxy or the platform's TLS) before the Whalio app uses it on
   devices; iOS blocks plain HTTP by default.
-- Keep `FIRECRAWL_API_KEY` in the platform's secret store, not in the image.
+- Keep `FIRECRAWL_API_KEY` and `FCM_SERVICE_ACCOUNT` in the platform's secret store, not in the
+  image. The service account comes from Firebase console → Project settings → Service accounts →
+  Generate new private key. Pushes need the jobs to run, so on a free tier the cron below is
+  required.
 - **Always-on host** (VPS, Fly.io, Railway): keep `REFRESH_MINUTES` > 0; the service runs its jobs
   every 2 minutes. No cron needed.
 - **Host that stops idle processes** (serverless, free tiers): set `REFRESH_MINUTES=0` and a

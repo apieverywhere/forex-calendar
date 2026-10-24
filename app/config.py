@@ -23,6 +23,9 @@ class Settings:
     # Bearer token for POST /api/v1/jobs/tick and /api/v1/refresh; unset
     # disables both endpoints (the in-process scheduler still runs).
     jobs_token: str | None = None
+    # Firebase service account (JSON) for "Actual released" pushes; unset
+    # disables them.
+    fcm_service_account: str | None = None
     ff_page_timezone: ZoneInfo = ZoneInfo("America/New_York")
     default_timezone: ZoneInfo = ZoneInfo("Asia/Ho_Chi_Minh")
     user_agent: str = (
@@ -60,6 +63,7 @@ class Settings:
                 if name.strip()
             ),
             jobs_token=env.get("JOBS_TOKEN") or None,
+            fcm_service_account=env.get("FCM_SERVICE_ACCOUNT") or None,
             ff_page_timezone=ZoneInfo(
                 env.get("FF_PAGE_TIMEZONE") or defaults.ff_page_timezone.key
             ),

@@ -51,6 +51,7 @@ app/
 ├── models.py                   Event / EventOut / CalendarResponse, id and impact helpers
 ├── service.py                  refresh policy, crawling, filtering
 ├── store.py                    Redis storage (keys, expiry, index)
+├── push.py                     FCM "Actual released" notifications (ADR-004)
 └── sources/
     ├── __init__.py             SourceError
     ├── faireconomy.py          weekly export

@@ -97,7 +97,7 @@ Accepts `tz`, `currency`, `impact`.
 ```json
 {"events_stored": 402, "feed_refreshed_at": "2026-10-18T19:56:04+00:00",
  "refresh_minutes": 30, "retention_days": 15, "page_fetchers": ["firecrawl"],
- "usage_this_month": {"firecrawl": 1}, "last_error": null}
+ "push_enabled": false, "usage_this_month": {"firecrawl": 1}, "last_error": null}
 ```
 
 ## POST /api/v1/jobs/tick
