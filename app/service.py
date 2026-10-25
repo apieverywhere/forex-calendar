@@ -42,6 +42,9 @@ RELEASE_SLOW_INTERVAL = timedelta(minutes=10)
 # THIS_WEEK_AFTER, at most once per THIS_WEEK_INTERVAL (one credit each).
 THIS_WEEK_AFTER = timedelta(hours=2)
 THIS_WEEK_INTERVAL = timedelta(hours=6)
+# A day page that failed (e.g. a challenge page the reader still charged for)
+# is backfilled again only after this long, not on every tick.
+BACKFILL_RETRY_INTERVAL = timedelta(days=1)
 _PAGE_CONCURRENCY = 3
 # "Actual released" pushes go out only for releases this recent, so a backfill
 # or a late read of an older day sends nothing (Whalio spec 010).
@@ -113,9 +116,14 @@ class CalendarService:
 
     # --- sources ------------------------------------------------------------
 
-    async def refresh_feed(self) -> int:
-        """Downloads the weekly feed and stores it. Returns the event count."""
+    async def refresh_feed(self, *, only_if_due: bool = False) -> int:
+        """Downloads the weekly feed and stores it. Returns the event count.
+
+        With [only_if_due], callers that raced for the lock skip the download
+        once the first one has recorded its result (see [_feed_due])."""
         async with self._feed_lock:
+            if only_if_due and not self._feed_due():
+                return 0
             now = self.now()
             try:
                 items = await fetch_feed(self.client, self.settings.feed_url)
@@ -147,6 +155,8 @@ class CalendarService:
                 break
             except SourceError as error:
                 # e.g. out of credits: fall back to the next reader.
+                if error.cost:
+                    self.store.add_usage(fetcher.name, now, error.cost)
                 errors.append(str(error))
                 log.warning("page %s: %s failed, trying next reader", label, fetcher.name)
         else:
@@ -198,6 +208,8 @@ class CalendarService:
         results = await asyncio.gather(*(self.crawl_day(d) for d in days), return_exceptions=True)
         for day, result in zip(days, results):
             if isinstance(result, Exception):
+                # Recorded so the jobs back off instead of paying for it every tick.
+                self.store.mark_crawled(f"page-failed:{day.isoformat()}", self.now())
                 log.warning("%s: page %s failed: %s", reason, day, result)
         if days:
             log.info("%s: read %d page(s)", reason, len(days))
@@ -243,9 +255,13 @@ class CalendarService:
             youngest[day] = min(age, youngest.get(day, age))
         days = sorted(youngest)
         read_at = self.store.crawled_many([f"page:{day.isoformat()}" for day in days])
+        failed_at = self.store.crawled_many([f"page-failed:{day.isoformat()}" for day in days])
+        # A failed read counts as an attempt, so a page that keeps failing
+        # follows the slow interval too.
+        tried_at = [max(filter(None, pair), default=None) for pair in zip(read_at, failed_at)]
         due = [
             day
-            for day, last in zip(days, read_at)
+            for day, last in zip(days, tried_at)
             if youngest[day] <= RELEASE_FAST_WINDOW
             or last is None
             or now - last >= RELEASE_SLOW_INTERVAL
@@ -303,11 +319,18 @@ class CalendarService:
 
     async def backfill(self) -> int:
         """Reads, once, every day of the viewable history up to yesterday that
-        was never read (e.g. right after the first deploy)."""
+        was never read (e.g. right after the first deploy). A day whose read
+        failed waits BACKFILL_RETRY_INTERVAL before the next attempt."""
+        now = self.now()
         first, yesterday = self.earliest_page_day(), self._page_today() - timedelta(days=1)
         history = [first + timedelta(days=i) for i in range((yesterday - first).days + 1)]
         marks = self.store.crawled_many([f"page:{day.isoformat()}" for day in history])
-        days = [day for day, mark in zip(history, marks) if mark is None]
+        failed = self.store.crawled_many([f"page-failed:{day.isoformat()}" for day in history])
+        days = [
+            day
+            for day, mark, failed_at in zip(history, marks, failed)
+            if mark is None and (failed_at is None or now - failed_at >= BACKFILL_RETRY_INTERVAL)
+        ]
         return await self._crawl_days(days, "backfill")
 
     async def push_actuals(self) -> int:
@@ -343,7 +366,7 @@ class CalendarService:
             report: dict = {}
             if self._feed_due():
                 try:
-                    report["feed_events"] = await self.refresh_feed()
+                    report["feed_events"] = await self.refresh_feed(only_if_due=True)
                 except SourceError as error:
                     report["feed_error"] = str(error)
             if self.fetchers:
@@ -386,7 +409,7 @@ class CalendarService:
         # a feed download (up to the 20 s client timeout).
         if self.settings.refresh_minutes == 0 and self._feed_due():
             try:
-                await self.refresh_feed()
+                await self.refresh_feed(only_if_due=True)
             except SourceError:
                 log.warning("feed refresh failed; serving stored data")
         needle = (search or "").strip().lower()
