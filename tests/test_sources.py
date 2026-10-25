@@ -30,6 +30,19 @@ def test_feed_skips_malformed_items():
     assert parse_feed([{"title": "x"}, {"date": "bad", "title": "y"}, "junk"], NOW) == []
 
 
+def test_feed_items_that_used_to_abort_the_refresh_are_skipped_or_cleaned():
+    cpi = {"title": "CPI m/m", "country": "USD", "date": "2026-10-14T08:30:00-04:00"}
+    events = parse_feed(
+        [
+            {**cpi, "impact": 1},
+            {**cpi, "title": "Year one", "date": "0001-01-01T00:00:00+01:00"},
+            {**cpi, "title": "Far future", "date": "9999-12-31T12:00:00+00:00"},
+        ],
+        NOW,
+    )
+    assert [(e.title, e.impact) for e in events] == [("CPI m/m", "Low")]
+
+
 def test_page_url_uses_forexfactory_day_format():
     assert page_url(date(2026, 10, 4)) == "https://www.forexfactory.com/calendar?day=oct4.2026"
 
@@ -99,6 +112,8 @@ def test_unrendered_pages_are_rejected():
 
     blank = '<tr class="calendar__row"><td class="calendar__cell calendar__cell--blank"></td></tr>'
     with pytest.raises(SourceError, match="not rendered"):
-        _rendered_calendar(blank, "firecrawl")
-    with pytest.raises(SourceError, match="no calendar table"):
-        _rendered_calendar("<html>Just a moment...</html>", "firecrawl")
+        _rendered_calendar(blank, "firecrawl", 1)
+    with pytest.raises(SourceError, match="no calendar table") as rejected:
+        _rendered_calendar("<html>Just a moment...</html>", "firecrawl", 1)
+    # The reader was paid even though the page is unusable.
+    assert rejected.value.cost == 1

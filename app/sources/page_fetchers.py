@@ -33,13 +33,15 @@ class PageFetcher(Protocol):
     async def fetch(self, client: httpx.AsyncClient, url: str) -> FetchedPage: ...
 
 
-def _rendered_calendar(html: str, provider: str) -> str:
+def _rendered_calendar(html: str, provider: str, cost: int) -> str:
     if "calendar__row" not in html:
-        raise SourceError(f"{provider}: page has no calendar table (blocked or layout changed)")
+        raise SourceError(
+            f"{provider}: page has no calendar table (blocked or layout changed)", cost
+        )
     # Rows exist before the page's script fills them; blank cells mean the
     # reader returned the page too early.
     if "calendar__cell--blank" in html:
-        raise SourceError(f"{provider}: calendar rows were not rendered")
+        raise SourceError(f"{provider}: calendar rows were not rendered", cost)
     return html
 
 
@@ -71,11 +73,18 @@ class FirecrawlFetcher:
         if response.status_code != 200:
             # 402: out of credits; 429: rate limited.
             raise SourceError(f"firecrawl HTTP {response.status_code}: {response.text[:200]}")
-        body = response.json()
+        try:
+            body = response.json()
+        except ValueError as error:
+            raise SourceError("firecrawl did not return JSON") from error
+        if not isinstance(body, dict):
+            raise SourceError("firecrawl JSON is not an object")
         if not body.get("success"):
             raise SourceError(f"firecrawl: {body.get('error')}")
         data = body.get("data") or {}
-        html = _rendered_calendar(data.get("rawHtml") or "", self.name)
         credits = (data.get("metadata") or {}).get("creditsUsed")
-        return FetchedPage(html, credits if isinstance(credits, int) else 1)
+        cost = credits if isinstance(credits, int) else 1
+        # The scrape is paid for even when the page is then rejected.
+        html = _rendered_calendar(data.get("rawHtml") or "", self.name, cost)
+        return FetchedPage(html, cost)
 

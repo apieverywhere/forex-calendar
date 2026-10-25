@@ -45,14 +45,18 @@ def parse_feed(items: list[dict], now: datetime) -> list[Event]:
             continue
         try:
             time_utc = datetime.fromisoformat(raw_date).astimezone(UTC)
-        except ValueError:
+        except (ValueError, OverflowError):
+            continue
+        # A date this far off is malformed, and near the datetime limits it
+        # would overflow the expiry and abort the whole refresh.
+        if not 2000 <= time_utc.year < 3000:
             continue
         currency = (clean(item.get("country")) or "ALL").upper()
         event = Event(
             id=event_id(currency, title, time_utc),
             title=title,
             currency=currency,
-            impact=normalize_impact(item.get("impact")),
+            impact=normalize_impact(clean(item.get("impact"))),
             time_utc=time_utc,
             forecast=clean(item.get("forecast")),
             previous=clean(item.get("previous")),

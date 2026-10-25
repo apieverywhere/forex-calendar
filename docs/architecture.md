@@ -72,22 +72,24 @@ nothing.
 | Step | Reads | Day pages |
 |---|---|---|
 | Export refresh | the weekly export, when older than `max(REFRESH_MINUTES, 15)` min | 0 |
-| Releases awaiting Actual | day page of every data release (has Forecast or Previous) within 60 min after its time and still without Actual: every tick for the first 10 min, then every 10 min | ~1–2 per release time; at most ~10 when no Actual ever appears |
+| Releases awaiting Actual | day page of every data release (has Forecast or Previous) within 60 min after its time and still without Actual: every tick for the first 10 min, then every 10 min since the last read or failed read (`page-failed:<date>` mark) | ~1–2 per release time; at most ~10 when no Actual ever appears or the page keeps failing |
 | Finalize yesterday | once a day (`final:<date>` mark): yesterday's page, only if a release there still has no Actual | usually 0 |
-| Backfill | once per day ever (`page:<date>` mark): each day from Monday `PAGE_HISTORY_WEEKS` weeks ago to yesterday never read | only after a first deploy or downtime |
+| Backfill | once per day ever (`page:<date>` mark): each day from Monday `PAGE_HISTORY_WEEKS` weeks ago to yesterday never read; a day whose read failed waits a day (`page-failed:<date>` mark) | only after a first deploy or downtime; while pages keep failing, at most one read per history day a day |
 | This week (fallback) | only while the export fails: once it has failed for 2 h since its last success, the `?week=this` page at most every 6 h (`this-week:tried` mark) | 0 while the export works; ≤ 4 a day |
 | Next week | once a day in the page zone (`next-week:<date>` mark, set before the read so a failure waits a day): the `?week=next` page | 1 page (1 credit) a day |
 | Push Actuals | only with `FCM_SERVICE_ACCOUNT`: releases of the last 3 h that have an Actual and no `push:<id>:<lang>` mark get one FCM message per language (ADR-004) | 0 |
 
 Each reader's spend (Firecrawl credits) is added up per month
-(`usage:<reader>:<YYYY-MM>`) and shown by `GET /api/v1/status` (`usage_this_month`). Next week comes from the `?week=next` page (one credit a day, about 30 a month).
+(`usage:<reader>:<YYYY-MM>`) and shown by `GET /api/v1/status` (`usage_this_month`), including
+pages the reader returned but the service rejected (a challenge page or unrendered rows). Next week comes from the `?week=next` page (one credit a day, about 30 a month).
 Its rows have `source = forexfactory_week`; they are a schedule, so when the export rolls over to
 that week its refresh may update or delete them like its own rows, and day pages override them.
 
 The export refresh time is kept in Redis, so restarting the service does not download the export
 again while it is fresh (repeat downloads get HTTP 429). A failed download is recorded too: jobs
 and queries do not try again until `REFRESH_MINUTES` (at least 15) have passed, because retrying a
-rate-limited export keeps it blocked. `POST /api/v1/refresh` still forces a download.
+rate-limited export keeps it blocked. The check is repeated under the feed lock, so concurrent
+queries or a tick racing a query download it once. `POST /api/v1/refresh` still forces a download.
 Queries download the export only when `REFRESH_MINUTES=0` (no in-process jobs); otherwise
 the jobs keep it fresh and a request never waits on the export.
 

@@ -45,7 +45,11 @@ WEEK_PAGE = """
 </table>"""
 
 
-def make_service(start: datetime):
+# What Firecrawl returns (HTTP 200, charged) when Cloudflare challenges it.
+CHALLENGE_PAGE = "<html><title>Just a moment...</title></html>"
+
+
+def make_service(start: datetime, day_page: str = DAY_PAGE):
     clock = [start]
     reads: list[tuple[datetime, str]] = []
 
@@ -54,7 +58,7 @@ def make_service(start: datetime):
         reads.append((clock[0], url))
         return httpx.Response(
             200,
-            json={"success": True, "data": {"rawHtml": WEEK_PAGE if "week=" in url else DAY_PAGE}},
+            json={"success": True, "data": {"rawHtml": WEEK_PAGE if "week=" in url else day_page}},
         )
 
     store = EventStore(fakeredis.FakeRedis(decode_responses=True), now=lambda: clock[0])
@@ -65,6 +69,47 @@ def make_service(start: datetime):
         now=lambda: clock[0],
     )
     return service, store, clock, reads
+
+
+async def test_a_rejected_day_page_is_backfilled_once_a_day_and_its_cost_counted():
+    service, store, clock, reads = make_service(RELEASE, day_page=CHALLENGE_PAGE)
+
+    # Every 2-minute tick for an hour used to re-read every history day.
+    for minute in range(0, 60, 2):
+        clock[0] = RELEASE + timedelta(minutes=minute)
+        await service.backfill()
+    first_pass = len(reads)
+    assert first_pass > 0
+    assert {at for at, _ in reads} == {RELEASE}
+    assert store.usage("firecrawl", RELEASE) == first_pass
+
+    # A day later the failed days are tried again, plus the new yesterday.
+    clock[0] = RELEASE + timedelta(days=1)
+    await service.backfill()
+    assert len(reads) == 2 * first_pass + 1
+
+
+async def test_a_release_whose_page_keeps_failing_is_read_on_the_same_schedule():
+    service, store, clock, reads = make_service(RELEASE, day_page=CHALLENGE_PAGE)
+    cpi = Event(
+        id=event_id("USD", "CPI m/m", RELEASE),
+        title="CPI m/m",
+        currency="USD",
+        impact="High",
+        time_utc=RELEASE,
+        forecast="0.3%",
+        previous="0.4%",
+        source="faireconomy",
+        updated_at=RELEASE,
+    )
+    store.replace_window(RELEASE - timedelta(hours=1), RELEASE + timedelta(hours=1), [cpi])
+
+    for minute in range(0, 72, 2):
+        clock[0] = RELEASE + timedelta(minutes=minute)
+        await service.refresh_released()
+
+    minutes = [int((at - RELEASE).total_seconds() // 60) for at, _ in reads]
+    assert minutes == [2, 4, 6, 8, 10, 20, 30, 40, 50, 60]
 
 
 async def test_a_release_without_actual_costs_about_ten_reads_not_thirty():

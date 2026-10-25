@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -45,3 +46,26 @@ async def test_a_rate_limited_feed_is_not_retried_before_the_refresh_interval():
     await service.tick()
     assert feed_calls == [START, START + timedelta(minutes=30)]
     assert "HTTP 429" in service.status()["last_error"]
+
+
+async def test_concurrent_queries_download_the_feed_once():
+    feed_calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal feed_calls
+        feed_calls += 1
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json=[])
+
+    service = CalendarService(
+        # No scheduler: queries refresh the feed themselves.
+        Settings(refresh_minutes=0),
+        EventStore(fakeredis.FakeRedis(decode_responses=True), now=lambda: START),
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        now=lambda: START,
+    )
+    day = date(2026, 10, 23)
+
+    # Each query that saw the feed due used to queue its own download.
+    await asyncio.gather(*(service.events(day, day, HANOI) for _ in range(5)))
+    assert feed_calls == 1
