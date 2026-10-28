@@ -9,7 +9,7 @@ Environment variables (see `.env.example`); `uvicorn --env-file .env` loads them
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis holding events |
 | `RETENTION_DAYS` | `15` | Events are deleted this many days after their release (the app shows at most last week) |
 | `JOBS_TOKEN` | empty | Bearer token for `POST /api/v1/jobs/tick` and `/api/v1/refresh`; empty disables both |
-| `FCM_SERVICE_ACCOUNT` | empty | Firebase service account key (the whole JSON, one line) for "Actual released" pushes to the Whalio app (ADR-004); empty disables them |
+| `FCM_SERVICE_ACCOUNT` | empty | Firebase service account key (the whole JSON, one line) for "Actual released" and "large liquidation" pushes to the Whalio app (ADR-004, ADR-005); empty disables them |
 | `REDIS_PREFIX` | `fxcal:` | Key prefix, to share a Redis with other apps |
 | `PAGE_HISTORY_WEEKS` | `1` | Backfill reads day pages only back to the Monday this many weeks ago; older days come from storage only |
 | `FEED_URL` | `https://nfs.faireconomy.media/ff_calendar_thisweek.json` | Weekly export |
@@ -76,6 +76,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
   required.
 - **Always-on host** (VPS, Fly.io, Railway): keep `REFRESH_MINUTES` > 0; the service runs its jobs
   every 2 minutes. No cron needed.
+- "Large liquidation" pushes (ADR-005) need an always-on host: they come from a WebSocket the
+  process keeps open, which the cron tick cannot replace.
 - **Host that stops idle processes** (serverless, free tiers): set `REFRESH_MINUTES=0` and a
   `JOBS_TOKEN`, and let a scheduler call the tick every 2 minutes, e.g. cron-job.org, GitHub
   Actions or the platform's cron:
@@ -93,6 +95,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 `GET /api/v1/status`: `feed_refreshed_at` older than about two intervals, or a `last_error`,
 means upstream trouble. Logs print `feed refreshed: N events` on each refresh.
 
+With push configured, logs also print `OKX liquidations: connected`, one
+`liquidations <instrument> <HH:MM UTC> long $… short $…` line per minute with liquidations (to
+tune `liquidations.TRACKED` thresholds) and `large <side> liquidations …` for each alert.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -105,6 +111,7 @@ means upstream trouble. Logs print `feed refreshed: N events` on each refresh.
 | Feed HTTP 429 on a cloud host (`feed_refreshed_at` old or null) | The host's shared outgoing IP is blocked by the export, by other tenants' traffic too (seen on Render Singapore, 2026-10-23) | With `FIRECRAWL_API_KEY` the service reads this week from the `?week=this` page after 2 h, every 6 h at most, until the export recovers. Otherwise move to a host with its own IP |
 | Firecrawl credits used up fast | Backfill after a deploy or downtime | Each page costs 1 credit; past days are re-read at most every 24 h |
 | Empty response for a past week | Service was not running that week and no Firecrawl key | Add a key, or accept the gap |
+| `OKX liquidations: …; reconnecting` repeating | OKX unreachable from the host, or `ctVal` missing for a tracked swap (delisted or renamed) | Check `curl https://www.okx.com/api/v5/public/instruments?instType=SWAP`; update `liquidations.TRACKED` |
 | Startup fails with `ConnectionError` | Redis not running or wrong `REDIS_URL` | Start Redis; check `redis-cli -u $REDIS_URL ping` |
 | `Failed host lookup` for an upstream | Local DNS (the Whalio machine's router returned only IPv6 for some hosts) | Check `dscacheutil -q host -a name <host>`; change DNS |
 

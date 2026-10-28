@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .config import Settings
+from .liquidations import LiquidationWatcher
 from .models import CalendarResponse, EventOut
 from .push import FcmSender
 from .service import CalendarService
@@ -65,6 +66,9 @@ def create_app(
         jobs = []
         if settings.refresh_minutes > 0:
             jobs.append(asyncio.create_task(service.run_jobs_loop()))
+        # "Large liquidation" pushes need a socket open all the time (ADR-005).
+        if push is not None:
+            jobs.append(asyncio.create_task(LiquidationWatcher(push, client).run()))
         yield
         for job in jobs:
             job.cancel()

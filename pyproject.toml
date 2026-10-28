@@ -10,6 +10,7 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "redis>=5",
     "pyjwt[crypto]>=2.8",
+    "websockets>=13",
 ]
 
 [project.optional-dependencies]

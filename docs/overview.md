@@ -16,7 +16,7 @@ it, and hides the upstream details from clients.
 | Collect the weekly export on a schedule | Bypassing Cloudflare or other access controls |
 | Optional day and week pages via Firecrawl (with an API key) | Event detail pages, history charts, news |
 | Store collected events in Redis for 15 days after release | User accounts, API keys for clients |
-| Query by day range and time zone; filter by currency, impact, text, released | Push notifications (Whalio ADR-002 owns those) |
+| Query by day range and time zone; filter by currency, impact, text, released | Deciding who gets notified (the app subscribes to FCM topics; ADR-004, ADR-005) |
 | JSON and CSV output | A web dashboard |
 
 ## Coverage at a glance

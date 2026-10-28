@@ -19,6 +19,7 @@ background task (lifespan) ──> CalendarService.refresh_feed() every REFRESH_
 | `store.py` | `EventStore`: Redis keys, expiry, time index, merge, range query, crawl log; writes guarded by a lock |
 | `sources/` | Upstream HTTP and parsing only; raise `SourceError` on any upstream problem |
 | `push.py` | `FcmSender`: "Actual released" notifications to FCM topics (ADR-004); message text in the Whalio app's 7 languages |
+| `liquidations.py` | `LiquidationWatcher`: OKX liquidation socket, per-minute sums and "large liquidation" pushes (ADR-005) |
 
 ## Request flow (`GET /api/v1/calendar`)
 
@@ -78,6 +79,9 @@ nothing.
 | This week (fallback) | only while the export fails: once it has failed for 2 h since its last success, the `?week=this` page at most every 6 h (`this-week:tried` mark) | 0 while the export works; ≤ 4 a day |
 | Next week | once a day in the page zone (`next-week:<date>` mark, set before the read so a failure waits a day): the `?week=next` page | 1 page (1 credit) a day |
 | Push Actuals | only with `FCM_SERVICE_ACCOUNT`: releases of the last 3 h that have an Actual and no `push:<id>:<lang>` mark get one FCM message per language (ADR-004) | 0 |
+
+Separate from the tick, with `FCM_SERVICE_ACCOUNT` the lifespan also keeps a WebSocket to OKX's
+liquidations open and pushes "large liquidation" messages as they happen (ADR-005).
 
 Each reader's spend (Firecrawl credits) is added up per month
 (`usage:<reader>:<YYYY-MM>`) and shown by `GET /api/v1/status` (`usage_this_month`), including

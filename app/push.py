@@ -111,12 +111,20 @@ class FcmSender:
     async def send(self, event: Event, lang: str) -> None:
         """One notification to the event's topic in [lang]."""
         title, body = message_text(event, lang)
+        await self.send_notification(
+            topic(event.id, lang), title, body, channel_id=CHANNEL_ID, data={"event_id": event.id}
+        )
+
+    async def send_notification(
+        self, topic_: str, title: str, body: str, *, channel_id: str, data: dict[str, str]
+    ) -> None:
+        """One high-priority notification message to [topic_]."""
         message = {
             "message": {
-                "topic": topic(event.id, lang),
+                "topic": topic_,
                 "notification": {"title": title, "body": body},
-                "android": {"priority": "high", "notification": {"channel_id": CHANNEL_ID}},
-                "data": {"event_id": event.id},
+                "android": {"priority": "high", "notification": {"channel_id": channel_id}},
+                "data": data,
             }
         }
         token = await self._access_token()
@@ -132,4 +140,4 @@ class FcmSender:
             # Revoked or expired early: fetch a new token next time.
             self._token = None
         if response.status_code != 200:
-            raise PushError(f"send {topic(event.id, lang)}: HTTP {response.status_code}")
+            raise PushError(f"send {topic_}: HTTP {response.status_code}")
