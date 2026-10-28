@@ -78,6 +78,10 @@ Eastern: on 2026-10-19 Firecrawl pages came back in UTC−5 and Jina pages (no l
 `FF_PAGE_TIMEZONE` is only the fallback when the clock is missing. `All Day` and `Tentative` rows are stored at local midnight with
 `all_day = true` and the label in `time_note`.
 
+Right after a rate decision Forex Factory puts `PENDING` in the Actual cell until the number is
+posted (seen 2026-10-28, NZD Official Cash Rate). It is stored as `actual = null`, so the release
+keeps being re-read and no "Actual released" push goes out for it.
+
 Each page takes about 2–9 s; at most 3 run at once. A request for a week reads 9 pages (the week plus
 one day on each side, because the page zone is only known after a fetch).
 

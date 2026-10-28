@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
+from app.models import Event
 from app.sources.faireconomy import parse_feed
 from app.sources.forexfactory_page import page_timezone, page_url, parse_day
 
@@ -62,6 +63,15 @@ def test_page_rows_carry_actual_status_and_inherit_time():
     assert (core.actual_status, core.impact) == ("worse", "Medium")
     assert boe.all_day and boe.time_note == "Tentative"
     assert boe.actual is None and boe.impact == "Low"
+
+
+def test_pending_actual_is_no_actual():
+    html = PAGE_HTML.replace(">0.2%<", ">PENDING<", 1)
+    assert ">PENDING<" in html
+    cpi = parse_day(html, date(2026, 10, 14), NEW_YORK, NOW)[0][0]
+    assert cpi.actual is None
+    # Rows stored with the placeholder read back without it.
+    assert Event.model_validate_json(cpi.model_copy(update={"actual": "PENDING"}).model_dump_json()).actual is None
 
 
 def test_page_and_feed_rows_share_ids():

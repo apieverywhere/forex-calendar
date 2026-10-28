@@ -69,6 +69,17 @@ async def test_rereads_pages_of_fresh_releases_without_actual():
     assert pages[0].endswith("forexfactory.com/calendar?day=oct14.2026")
 
 
+async def test_a_rate_decision_shown_as_pending_is_reread():
+    service, store, pages = make_service()
+    store_events(
+        store,
+        make_event("Official Cash Rate", NOW - timedelta(minutes=1), forecast="3.00%", actual="PENDING"),
+    )
+
+    assert [e.title for e in service.awaiting_actual()] == ["Official Cash Rate"]
+    assert await service.refresh_released() == 1
+
+
 async def test_nothing_to_do_without_pending_releases_or_key():
     service, store, pages = make_service()
     store_events(store, make_event("CPI m/m", NOW - timedelta(minutes=10), actual="0.2%"))

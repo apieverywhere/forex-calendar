@@ -2,7 +2,7 @@ import hashlib
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 Impact = Literal["High", "Medium", "Low", "Holiday"]
 ActualStatus = Literal["better", "worse"]
@@ -26,6 +26,14 @@ class Event(BaseModel):
     url: str | None = None
     source: Source
     updated_at: datetime
+
+    @field_validator("actual")
+    @classmethod
+    def _pending_is_no_actual(cls, value: str | None) -> str | None:
+        """Forex Factory shows "PENDING" in the Actual cell of a rate decision
+        until the number is posted. That is no value: the release keeps
+        awaiting its Actual and gets no push. Also clears rows stored before."""
+        return None if value is not None and value.strip().upper() == "PENDING" else value
 
 
 class EventOut(Event):
