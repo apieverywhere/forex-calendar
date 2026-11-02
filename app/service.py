@@ -17,6 +17,7 @@ from .sources.forexfactory_page import (
     parse_day,
     parse_week,
 )
+from .price_alerts import PriceAlerts
 from .push import LANGUAGES, FcmSender, PushError
 from .sources.page_fetchers import FirecrawlFetcher, PageFetcher
 
@@ -101,6 +102,7 @@ class CalendarService:
         self.now = now
         # None when FCM_SERVICE_ACCOUNT is unset: no notifications.
         self.push = push
+        self.price_alerts = PriceAlerts(store, client, push, now) if push else None
         self.last_error: str | None = None
         self._feed_lock = asyncio.Lock()
         self._tick_lock = asyncio.Lock()
@@ -377,6 +379,8 @@ class CalendarService:
                 report["this_week_events"] = await self.refresh_this_week()
             if self.push is not None:
                 report["pushed"] = await self.push_actuals()
+            if self.price_alerts is not None:
+                report["price_alerts"] = await self.price_alerts.run_if_due()
             return report
 
     async def run_jobs_loop(self) -> None:

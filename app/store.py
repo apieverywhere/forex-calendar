@@ -9,6 +9,8 @@ Keys (all under the configured prefix, default `fxcal:`):
                         credits); expires after ~2 months
     holidays:nyse       JSON {"fetched_at", "holidays"} of the last good NYSE
                         holiday list (ADR-006); no expiry, replaced on refresh
+    price:<instrument>  side ("up" / "down") a price alert was last sent for
+                        (ADR-007); expires after 3 days, deleted under 5%
 
 Redis deletes each event on its own once it is `retention` (default 15 days)
 past its release time. Index entries of expired events are pruned on every
@@ -210,6 +212,19 @@ class EventStore:
             return None
         data = json.loads(value)
         return data["holidays"], datetime.fromisoformat(data["fetched_at"])
+
+    def price_side(self, instrument: str) -> str | None:
+        return self._redis.get(f"{self._prefix}price:{instrument}")
+
+    def save_price_side(self, instrument: str, side: str) -> None:
+        self._redis.set(
+            f"{self._prefix}price:{instrument}",
+            side,
+            ex=int(timedelta(days=3).total_seconds()),
+        )
+
+    def clear_price_side(self, instrument: str) -> None:
+        self._redis.delete(f"{self._prefix}price:{instrument}")
 
     def count(self) -> int:
         with self._lock:

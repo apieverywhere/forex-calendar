@@ -53,6 +53,8 @@ app/
 ├── store.py                    Redis storage (keys, expiry, index)
 ├── push.py                     FCM "Actual released" notifications (ADR-004)
 ├── liquidations.py             OKX liquidation socket, "large liquidation" pushes (ADR-005)
+├── holidays.py                 NYSE holidays from financecalendar.com, cached daily (ADR-006)
+├── price_alerts.py             hourly BingX 24h tickers, "price alert" pushes (ADR-007)
 └── sources/
     ├── __init__.py             SourceError
     ├── faireconomy.py          weekly export
@@ -61,7 +63,9 @@ app/
 tests/                          pytest; upstream faked with httpx.MockTransport
 ```
 
-Upstream HTTP is only in `sources/`. Routes call `CalendarService`, never sources or the store.
+Calendar upstream HTTP is only in `sources/`; the push features (`liquidations.py`,
+`price_alerts.py`) and `holidays.py` own their single upstream. Routes call `CalendarService` (or
+`HolidayService` for holidays), never sources or the store.
 
 ## Validation
 

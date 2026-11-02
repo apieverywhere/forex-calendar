@@ -20,6 +20,7 @@ background task (lifespan) ──> CalendarService.refresh_feed() every REFRESH_
 | `sources/` | Upstream HTTP and parsing only; raise `SourceError` on any upstream problem |
 | `push.py` | `FcmSender`: "Actual released" notifications to FCM topics (ADR-004); message text in the Whalio app's 7 languages |
 | `liquidations.py` | `LiquidationWatcher`: OKX liquidation socket, per-minute sums and "large liquidation" pushes (ADR-005) |
+| `price_alerts.py` | `PriceAlerts`: hourly BingX 24h tickers and "price alert" pushes at ±5% (ADR-007) |
 | `holidays.py` | `HolidayService`: NYSE holidays from financecalendar.com with an API key, refreshed at most daily and kept in Redis (ADR-006) |
 
 ## Request flow (`GET /api/v1/calendar`)
@@ -80,6 +81,7 @@ nothing.
 | This week (fallback) | only while the export fails: once it has failed for 2 h since its last success, the `?week=this` page at most every 6 h (`this-week:tried` mark) | 0 while the export works; ≤ 4 a day |
 | Next week | once a day in the page zone (`next-week:<date>` mark, set before the read so a failure waits a day): the `?week=next` page | 1 page (1 credit) a day |
 | Push Actuals | only with `FCM_SERVICE_ACCOUNT`: releases of the last 3 h that have an Actual and no `push:<id>:<lang>` mark get one FCM message per language (ADR-004) | 0 |
+| Price alerts | only with `FCM_SERVICE_ACCOUNT`, at most once an hour (`crawl:price_alerts` mark): BingX 24h tickers of Whalio's 16 pairs; a pair at ±5% on a side other than its `price:<id>` mark gets one FCM message per language (ADR-007) | 0 |
 
 Separate from the tick, with `FCM_SERVICE_ACCOUNT` the lifespan also keeps a WebSocket to OKX's
 liquidations open and pushes "large liquidation" messages as they happen (ADR-005).
