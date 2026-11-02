@@ -20,8 +20,6 @@ log = logging.getLogger(__name__)
 
 HOLIDAYS_URL = "https://www.financecalendar.com/wp-json/fc/v1/holidays"
 SOURCE_URL = "https://www.financecalendar.com"
-# Crawl key of the last attempt, successful or not.
-ATTEMPT_KEY = "holidays:nyse"
 _FIELDS = ("date", "name", "status", "close_time_et")
 
 
@@ -31,9 +29,12 @@ async def fetch_holidays(client: httpx.AsyncClient, api_key: str) -> list[dict]:
             HOLIDAYS_URL,
             params={"exchange": "nyse"},
             headers={"Accept": "application/json", "X-API-Key": api_key},
+            # The provider often takes 10 s or more to answer.
+            timeout=60,
         )
     except httpx.HTTPError as error:
-        raise SourceError(f"holidays unreachable: {error}") from error
+        # Timeouts have an empty message; the class name says what happened.
+        raise SourceError(f"holidays unreachable: {type(error).__name__} {error}") from error
     if response.status_code != 200:
         raise SourceError(f"holidays returned HTTP {response.status_code}")
     try:
@@ -70,6 +71,8 @@ class HolidayService:
         self.retry = retry
         self.now = now
         self._lock = asyncio.Lock()
+        # Last failed call. Kept in memory, so a restart or deploy tries at once.
+        self._failed_at: datetime | None = None
 
     async def holidays(self) -> dict:
         """The saved list, refreshed first when it is a day old.
@@ -80,12 +83,13 @@ class HolidayService:
             saved = self.store.holidays()
             if self._due(saved):
                 now = self.now()
-                self.store.mark_crawled(ATTEMPT_KEY, now)
                 try:
                     rows = await fetch_holidays(self.client, self.api_key)
                     saved = (rows, now)
                     self.store.save_holidays(rows, now)
+                    self._failed_at = None
                 except SourceError as error:
+                    self._failed_at = now
                     log.warning("holidays: %s", error)
                     if saved is None:
                         raise
@@ -110,5 +114,4 @@ class HolidayService:
         now = self.now()
         if saved is not None and now - saved[1] < self.refresh:
             return False
-        attempted = self.store.crawled_at(ATTEMPT_KEY)
-        return attempted is None or now - attempted >= self.retry
+        return self._failed_at is None or now - self._failed_at >= self.retry
