@@ -26,6 +26,9 @@ class Settings:
     # Firebase service account (JSON) for "Actual released" pushes; unset
     # disables them.
     fcm_service_account: str | None = None
+    # financecalendar.com key for NYSE holidays (ADR-006); unset leaves
+    # /api/v1/holidays answering 503.
+    finance_calendar_api_key: str | None = None
     ff_page_timezone: ZoneInfo = ZoneInfo("America/New_York")
     default_timezone: ZoneInfo = ZoneInfo("Asia/Ho_Chi_Minh")
     user_agent: str = (
@@ -64,6 +67,7 @@ class Settings:
             ),
             jobs_token=env.get("JOBS_TOKEN") or None,
             fcm_service_account=env.get("FCM_SERVICE_ACCOUNT") or None,
+            finance_calendar_api_key=env.get("FINANCE_CALENDAR_API_KEY") or None,
             ff_page_timezone=ZoneInfo(
                 env.get("FF_PAGE_TIMEZONE") or defaults.ff_page_timezone.key
             ),

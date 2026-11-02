@@ -7,12 +7,15 @@ Keys (all under the configured prefix, default `fxcal:`):
     crawl:<key>         ISO time of the last crawl of a source; expires after `retention`
     usage:<reader>:<YYYY-MM>  quota a page reader spent that month (Firecrawl
                         credits); expires after ~2 months
+    holidays:nyse       JSON {"fetched_at", "holidays"} of the last good NYSE
+                        holiday list (ADR-006); no expiry, replaced on refresh
 
 Redis deletes each event on its own once it is `retention` (default 15 days)
 past its release time. Index entries of expired events are pruned on every
 write and skipped on read.
 """
 
+import json
 import threading
 from collections.abc import Callable, Collection, Iterable
 from datetime import UTC, datetime, timedelta
@@ -194,6 +197,19 @@ class EventStore:
     def usage(self, reader: str, at: datetime) -> int:
         value = self._redis.get(f"{self._prefix}usage:{reader}:{at.astimezone(UTC):%Y-%m}")
         return int(value) if value else 0
+
+    def save_holidays(self, rows: list[dict], fetched_at: datetime) -> None:
+        self._redis.set(
+            f"{self._prefix}holidays:nyse",
+            json.dumps({"fetched_at": fetched_at.astimezone(UTC).isoformat(), "holidays": rows}),
+        )
+
+    def holidays(self) -> tuple[list[dict], datetime] | None:
+        value = self._redis.get(f"{self._prefix}holidays:nyse")
+        if not value:
+            return None
+        data = json.loads(value)
+        return data["holidays"], datetime.fromisoformat(data["fetched_at"])
 
     def count(self) -> int:
         with self._lock:

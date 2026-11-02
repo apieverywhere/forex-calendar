@@ -20,6 +20,7 @@ background task (lifespan) ──> CalendarService.refresh_feed() every REFRESH_
 | `sources/` | Upstream HTTP and parsing only; raise `SourceError` on any upstream problem |
 | `push.py` | `FcmSender`: "Actual released" notifications to FCM topics (ADR-004); message text in the Whalio app's 7 languages |
 | `liquidations.py` | `LiquidationWatcher`: OKX liquidation socket, per-minute sums and "large liquidation" pushes (ADR-005) |
+| `holidays.py` | `HolidayService`: NYSE holidays from financecalendar.com with an API key, refreshed at most daily and kept in Redis (ADR-006) |
 
 ## Request flow (`GET /api/v1/calendar`)
 

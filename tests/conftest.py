@@ -22,6 +22,13 @@ FEED = [
      "impact": "Holiday", "forecast": "", "previous": ""},
 ]  # fmt: skip
 
+HOLIDAYS = [
+    {"date": "2026-11-26", "name": "Thanksgiving Day", "exchange": "nyse", "country": "US",
+     "status": "closed", "close_time_et": None, "url": "https://example.com/a"},
+    {"date": "2026-11-27", "name": "Day After Thanksgiving", "exchange": "nyse", "country": "US",
+     "status": "early_close", "close_time_et": "13:00", "url": None},
+]  # fmt: skip
+
 JOBS_TOKEN = "test-jobs-token"
 AUTH = {"Authorization": f"Bearer {JOBS_TOKEN}"}
 
@@ -75,8 +82,18 @@ class FakeUpstream:
         self.firecrawl_calls: list[dict] = []
         # HTTP status Firecrawl answers with; 402 = out of credits.
         self.firecrawl_status = 200
+        self.holidays = HOLIDAYS
+        self.holidays_status = 200
+        self.holidays_calls = 0
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.financecalendar.com":
+            self.holidays_calls += 1
+            assert request.headers["X-API-Key"] == "fcal-test"
+            assert request.url.params["exchange"] == "nyse"
+            if self.holidays_status != 200:
+                return httpx.Response(self.holidays_status, json={"code": "api_key_required"})
+            return httpx.Response(200, json={"exchange": "nyse", "holidays": self.holidays})
         if request.url.host == "nfs.faireconomy.media":
             self.feed_calls += 1
             if self.feed_status != 200:

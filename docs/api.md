@@ -92,6 +92,23 @@ Accepts `tz`, `currency`, `impact`.
 
 `{"currencies": ["AUD", "CAD", ...]}` — currencies with events within ±7 days of today.
 
+## GET /api/v1/holidays
+
+NYSE holidays and early closes from financecalendar.com (ADR-006), refreshed at most once a day;
+the last good list is served while the provider fails.
+
+```json
+{"exchange": "nyse", "count": 2, "fetched_at": "2026-11-02T09:00:00+00:00",
+ "source": "https://www.financecalendar.com",
+ "holidays": [
+   {"date": "2026-11-26", "name": "Thanksgiving Day", "status": "closed", "close_time_et": null},
+   {"date": "2026-11-27", "name": "Day After Thanksgiving", "status": "early_close", "close_time_et": "13:00"}]}
+```
+
+`status` is `closed` or `early_close`; `close_time_et` is New York time. 503 when no list has
+been saved yet and the provider cannot be read, or `FINANCE_CALENDAR_API_KEY` is unset. Show a
+link to `source` near the data (attribution).
+
 ## GET /api/v1/status
 
 ```json

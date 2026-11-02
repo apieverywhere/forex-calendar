@@ -10,6 +10,7 @@ Environment variables (see `.env.example`); `uvicorn --env-file .env` loads them
 | `RETENTION_DAYS` | `15` | Events are deleted this many days after their release (the app shows at most last week) |
 | `JOBS_TOKEN` | empty | Bearer token for `POST /api/v1/jobs/tick` and `/api/v1/refresh`; empty disables both |
 | `FCM_SERVICE_ACCOUNT` | empty | Firebase service account key (the whole JSON, one line) for "Actual released" and "large liquidation" pushes to the Whalio app (ADR-004, ADR-005); empty disables them |
+| `FINANCE_CALENDAR_API_KEY` | empty | financecalendar.com API key (verified account → workspace → Create API key) for `GET /api/v1/holidays` (ADR-006); empty makes it answer 503 |
 | `REDIS_PREFIX` | `fxcal:` | Key prefix, to share a Redis with other apps |
 | `PAGE_HISTORY_WEEKS` | `1` | Backfill reads day pages only back to the Monday this many weeks ago; older days come from storage only |
 | `FEED_URL` | `https://nfs.faireconomy.media/ff_calendar_thisweek.json` | Weekly export |
@@ -70,8 +71,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
   the database token).
 - Put it behind HTTPS (reverse proxy or the platform's TLS) before the Whalio app uses it on
   devices; iOS blocks plain HTTP by default.
-- Keep `FIRECRAWL_API_KEY` and `FCM_SERVICE_ACCOUNT` in the platform's secret store, not in the
-  image. The service account comes from Firebase console → Project settings → Service accounts →
+- Keep `FIRECRAWL_API_KEY`, `FINANCE_CALENDAR_API_KEY` and `FCM_SERVICE_ACCOUNT` in the
+  platform's secret store, not in the image. The service account comes from Firebase console → Project settings → Service accounts →
   Generate new private key. Pushes need the jobs to run, so on a free tier the cron below is
   required.
 - **Always-on host** (VPS, Fly.io, Railway): keep `REFRESH_MINUTES` > 0; the service runs its jobs

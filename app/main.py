@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .config import Settings
+from .holidays import HolidayService
 from .liquidations import LiquidationWatcher
 from .models import CalendarResponse, EventOut
 from .push import FcmSender
@@ -61,6 +62,7 @@ def create_app(
         )
         service = CalendarService(settings, store, client, push=push)
         app.state.service = service
+        app.state.holidays = HolidayService(store, client, settings.finance_calendar_api_key)
         # In-process scheduler. With REFRESH_MINUTES=0 an external cron calls
         # POST /api/v1/jobs/tick instead (hosts that stop idle processes).
         jobs = []
@@ -213,6 +215,15 @@ def create_app(
         today = datetime.now(UTC).astimezone(zone_).date()
         events = await service().events(today - timedelta(days=7), today + timedelta(days=7), zone_)
         return {"currencies": sorted({e.currency for e in events})}
+
+    @app.get("/api/v1/holidays")
+    async def holidays() -> dict:
+        """NYSE holidays and early closes (financecalendar.com), refreshed at
+        most once a day."""
+        try:
+            return await app.state.holidays.holidays()
+        except SourceError as error:
+            raise HTTPException(503, str(error)) from None
 
     def require_jobs_token(authorization: str | None) -> None:
         """Job endpoints spend reader credits, so they need JOBS_TOKEN; without

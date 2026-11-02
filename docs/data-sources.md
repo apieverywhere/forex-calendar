@@ -10,6 +10,7 @@ Checked 2026-10-19 from this machine.
 | Other export weeks | `ff_calendar_nextweek.json`, `ff_calendar_lastweek.json`, `ff_calendar_today.json` | 404 |
 | Jina Reader (removed 2026-10-19) | `https://r.jina.ai/https://www.forexfactory.com/calendar?day=…` | 401 anonymous; 200 with a key (~9k tokens per page). No longer configured |
 | forexfactory.com next week via Firecrawl (2026-10-22) | `https://www.forexfactory.com/calendar?week=next` | 200; 96 events Sun Oct 25 – Sat Oct 31 with Forecast / Previous; 1 credit |
+| financecalendar.com holidays (2026-11-02) | `https://www.financecalendar.com/wp-json/fc/v1/holidays?exchange=nyse` | 401 `api_key_required` without a key; needs `X-API-Key` (Free: 50 / day, 500 / month). Fetched at most daily (ADR-006) |
 | Firecrawl `/v1/scrape` | `rawHtml`, `maxAge: 0`, wait 3 s | 200; **1 credit per page** (free: 1,000 / month); rows are blank without the wait, an older copy without `maxAge: 0` |
 
 ## 1. Weekly export (`app/sources/faireconomy.py`)
